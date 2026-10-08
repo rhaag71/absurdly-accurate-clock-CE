@@ -1,0 +1,325 @@
+# Absurdly Accurate Clock — Consumer Edition Requirements
+
+## Purpose
+
+AAC-CE is the consumer/appliance-oriented derivative of the original
+Absurdly Accurate Clock.
+
+It inherits the proven AAC GPS/PPS timing architecture, but is intended
+to behave like an exceptionally good normal household clock rather than
+a laboratory/development instrument.
+
+The original AAC remains the reference/development platform.
+
+---
+
+## 1. Timing Architecture
+
+The existing AAC timing model remains fundamental:
+
+GPS UTC label + GPS PPS
+        ↓
+qualification / association
+        ↓
+authoritative UTC state
+        ↓
+consumer time policy
+        ↓
+presentation
+        ↓
+display backend
+
+The CE display must never perform independent timekeeping.
+
+Canonical internal time remains UTC.
+
+GPS parsing, PPS processing, UTC/PPS association, qualification and
+reacquisition logic should be inherited from the existing AAC unless
+measured evidence requires a change.
+
+---
+
+## 2. MCU / Build Targets
+
+AAC-CE shall support Raspberry Pi Pico / RP2040.
+
+The firmware should be made build-target aware rather than assuming
+RP2350 throughout the source.
+
+Desired architecture:
+
+    Common CE source
+        ├── RP2040 target
+        └── RP2350 target
+
+RP2040 is the initial CE hardware target.
+
+RP2350 support should remain possible where practical.
+
+Platform-specific code should be isolated from the clock engine.
+
+---
+
+## 3. Time Quality States
+
+CE should expose at least three meaningful time states:
+
+### UNSYNCED
+
+No authoritative UTC/PPS relationship has been established since boot.
+
+The clock must not present an arbitrary or stale time as valid.
+
+### LOCKED
+
+UTC is currently qualified against GPS/PPS.
+
+### HOLDOVER
+
+The clock was previously LOCKED but GPS/PPS authority has subsequently
+been lost.
+
+During HOLDOVER, time continues advancing from the MCU's local timing
+source.
+
+The display must make HOLDOVER distinguishable from LOCKED without
+making the clock unusable.
+
+Reacquisition of GPS/PPS should automatically return the clock to
+LOCKED operation.
+
+---
+
+## 4. Civil Time
+
+UTC remains canonical internally.
+
+Civil-time conversion is a consumer policy/presentation function.
+
+The selected civil timezone shall persist across power cycles.
+
+Initial supported zones may reuse the existing AAC US timezone logic:
+
+- Eastern
+- Central
+- Mountain
+- Pacific
+
+DST shall be derived from the configured civil timezone and date.
+
+Do not persist "EST" or "EDT" as a setting.
+
+Persist "US Eastern"; derive EST/EDT at runtime.
+
+The active abbreviation should be available to the presentation layer.
+
+---
+
+## 5. 12 / 24 Hour Display
+
+CE shall support:
+
+- 12-hour civil time
+- 24-hour civil time
+
+The selected mode shall persist across power cycles.
+
+Changing display format must not change canonical UTC.
+
+---
+
+## 6. Persistent Consumer Settings
+
+At minimum, persist:
+
+- civil timezone
+- 12/24-hour mode
+
+Likely future persistent settings:
+
+- display brightness
+- automatic dimming preference
+- status-display preference
+
+Persistent configuration should be separated from authoritative
+timekeeping state.
+
+Authoritative UTC itself should not be restored from persistent storage
+and falsely treated as GPS-qualified after a cold boot.
+
+---
+
+## 7. Main Display
+
+The primary display exists to show time clearly.
+
+Primary design goal:
+
+    room-readable HH:MM
+
+or another layout appropriate to the selected hardware.
+
+Seconds may appear on the primary display, but are not required there.
+
+The primary display should remain visually simple.
+
+Display hardware is build-specific and replaceable.
+
+Possible technologies include:
+
+- large discrete LED
+- VFD
+- vintage donor display
+- other suitable display technology
+
+The selected physical display must not dictate the timing architecture.
+
+---
+
+## 8. Secondary TFT Status Display
+
+Current candidate:
+
+2.25-inch ST7789 76x284 color TFT.
+
+The TFT may display:
+
+- seconds
+- GPS status
+- PPS status
+- LOCK / HOLDOVER / UNSYNCED state
+- satellite count
+- EST / EDT or corresponding active timezone abbreviation
+
+Example:
+
+    56   GPS+  PPS+
+         LOCK   EDT
+         SAT 08
+
+Status colors should be intuitive and restrained.
+
+Suggested semantics:
+
+- green: good / locked
+- orange: holdover / degraded but useful
+- red: unavailable / unsynchronized / fault
+
+The TFT is intentionally secondary.
+
+A person across the room should primarily see the time.
+
+Detailed timing status should require approaching the clock.
+
+---
+
+## 9. Display Architecture
+
+Presentation should consume a coherent snapshot of clock state.
+
+Conceptually:
+
+ClockCore
+    ↓
+ConsumerPolicy
+    ↓
+PresentationState
+    ↓
+DisplayBackend
+    ↓
+PhysicalDisplay
+
+Display code must not:
+
+- qualify GPS
+- associate UTC with PPS
+- advance authoritative UTC
+- decide whether the clock is locked
+- implement independent holdover timekeeping
+
+Display failure must not corrupt clock state.
+
+---
+
+## 10. Consumer Behavior
+
+AAC-CE should behave as a normal person expects a high-quality clock
+to behave.
+
+Examples:
+
+- Once synchronized, temporary GPS loss should not make the clock stop
+  displaying useful time.
+- GPS/PPS reacquisition should require no user intervention.
+- Configuration should survive power cycles.
+- Normal operation should require no network connection.
+- Technical status should be available without dominating the display.
+- The clock should normally require no routine maintenance or
+  consumables.
+
+---
+
+## 11. Networking
+
+Networking is NOT a CE requirement.
+
+The AAC Bridge / ESP32 subsystem is optional.
+
+CE must function fully as:
+
+    GPS
+      ↓
+    Pico
+      ↓
+    Displays
+
+No Internet connection is required for normal operation.
+
+---
+
+## 12. Watchdog / Failure Behavior
+
+Preserve the AAC watchdog philosophy.
+
+Missing GPS, missing PPS or display failure are degraded operating
+conditions, not firmware crashes.
+
+A watchdog reset invalidates previous timing authority and requires
+normal GPS/PPS reacquisition.
+
+---
+
+## 13. Startup Behavior
+
+On a cold boot:
+
+1. Load persistent consumer configuration.
+2. Initialize displays and hardware.
+3. Begin GPS/PPS acquisition.
+4. Remain UNSYNCED until the existing qualification rules establish
+   authoritative UTC.
+5. Enter LOCKED state.
+6. If authority is subsequently lost, enter HOLDOVER.
+
+Do not manufacture apparently valid wall-clock time before first
+synchronization.
+
+---
+
+## 14. Product Philosophy
+
+AAC-CE should be:
+
+- standalone
+- highly accurate to human perception
+- GPS referenced
+- useful during temporary GPS loss
+- non-cloud-dependent
+- non-"smart" unless a particular build genuinely requires networking
+- understandable without technical knowledge
+- attractive enough to live permanently on a shelf or desk
+- serviceable and understandable internally
+
+The engineering may be sophisticated.
+
+The user experience should not be.
