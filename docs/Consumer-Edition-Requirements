@@ -150,8 +150,9 @@ real GPS/PPS. Do not mix development behavior into production by default.
 Stage 2A implements two compile-time PlatformIO profiles: `pico2` for
 production and `pico2-dev` for development. They use the same Pico 2 / RP2350
 target, firmware architecture, dependencies, and display abstraction. The
-profile selector is independent of the display-backend selector; both
-currently select the existing PD-2200 backend. `include/ce_config.hpp`
+profile selector is independent of compile-time display selection. Both
+standard profiles default to STDOUT; optional physical drivers are selected
+explicitly. `include/ce_config.hpp`
 centralizes separate typed production/development profile settings and
 presentation defaults. Current configured behavior remains UTC and 24-hour
 time; birthday/holiday data and brightness/current limits are unset pending
@@ -268,15 +269,16 @@ or another layout appropriate to the selected hardware.
 Seconds may appear on the primary display, but are not required there.
 
 The primary display should remain visually legible. Dad's build uses one
-WS2812B 8×32 RGB panel (256 matrix pixels). The logical framebuffer must be
-independent of physical serpentine/order mapping.
+**WS2812 8x32 Panel**: 8 rows by 32 columns, 256 individually addressable RGB
+pixels. Its future logical pixel mapping must remain independent of physical
+pixel order. The driver is not yet implemented.
 
 Display hardware is build-specific and replaceable.
 
-Dad's selected display is one WS2812B 8×32 RGB panel (256 matrix pixels). The
-inherited character VFD implementation remains available as an optional
-backend. Other display technologies may be added behind the same backend
-boundary.
+Dad's selected consumer display is the WS2812 8x32 Panel. The inherited PD-2200
+VFD remains available only as an explicitly selected optional device driver;
+it is not the consumer display or default output. Other technologies may be
+selected behind the generic display framework.
 
 The selected physical display must not dictate the timing architecture.
 
@@ -337,23 +339,29 @@ Display code must not:
 - decide whether the clock is locked
 - implement independent holdover timekeeping
 
-Backends are selected at compile time; no runtime plugin system is required.
-The shared backend contract consumes a coherent presentation snapshot and does
-not require all backends to support RGB framebuffers, individual pixels, or
-animations. Display-specific mapping, rendering/effects, and physical transport
-stay behind the selected backend. Stage 1 selects the inherited PD-2200 backend
-so the existing VFD build remains functional; no WS2812, MAX7219, or TFT driver
-is implemented in that stage. The inherited VFD operates in Noritake serial
-command mode. For the verified PD-2200, command `0x0E` clears displayed
-characters without resetting the cursor/write position; `0x0C` homes it. This
-behavior must not be assumed for other Noritake-capable displays. Command
-protocol, PD-2200-specific behavior, and the physical UART/RS-232 transport are
-separate layers.
+Drivers are selected and composed at compile time; no runtime plugin system is
+required. With no explicit selection, STDOUT is selected automatically.
+Selecting one or more physical drivers does not silently add STDOUT; select
+`AAC_DISPLAY_STDOUT` explicitly to combine it with physical drivers. All
+selected drivers consume the same coherent presentation snapshot. The generic
+framework performs static composition only; it contains no device protocol,
+rendering, or hardware ownership. Each driver owns its formatting, buffers,
+cadence, transport, initialization, and bounded nonblocking service. A driver
+must not access or alter authoritative time. No WS2812, MAX7219, or TFT driver
+is implemented yet.
 
-The backend architecture is intended to accommodate WS2812 RGB matrices,
-MAX7219 monochrome matrices and seven-segment displays, SPI TFT LCDs,
-character VFDs including the PD-2200, and other technologies added later. These
-are future backend targets, not Stage 1 drivers.
+The optional PD-2200 driver retains its verified Noritake-compatible command
+behavior. For the verified PD-2200, command `0x0E` clears displayed characters
+without resetting the cursor/write position; `0x0C` homes it. This behavior
+must not be assumed for other Noritake-capable displays. The presentation
+adapter, PD-2200 command driver, and UART1/RS-232 transport are distinct layers.
+
+The framework supports multiple selected drivers sharing one presentation
+snapshot. Different technologies and refresh rates can be composed; each
+driver must keep service bounded so one output does not hold up timing or other
+drivers. Current implemented drivers are STDOUT and the optional PD-2200 VFD.
+The WS2812 8x32 Panel remains the selected consumer hardware, with its driver
+planned but not implemented.
 
 ### Future multi-display composition
 
@@ -376,11 +384,10 @@ characters, or instantaneous updates. Physical behavior and transport remain
 backend responsibilities, and display composition must never create another
 authoritative source of time.
 
-This is a future requirement, not current functionality. Stage 1 supports one
-compile-time-selected backend through `display_backend::Selected`, which
-remains correct for the current build. Multiple concurrent backends, display
-responsibility routing, scheduling, and asynchronous operations are not
-implemented. Dad's selected display remains one WS2812B 8×32 RGB panel.
+Compile-time composition and shared snapshot delivery are implemented. Rich
+responsibility routing and asynchronous scheduling are not; each selected
+driver currently receives the full snapshot and services once per application
+pass. Dad's selected display remains one WS2812 8x32 Panel.
 
 Display failure must not corrupt clock state.
 

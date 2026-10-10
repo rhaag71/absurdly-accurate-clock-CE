@@ -1,3 +1,4 @@
+#if defined(AAC_DISPLAY_VFD)
 #include <Arduino.h>
 #include <cstdio>
 #include <cstring>
@@ -106,18 +107,38 @@ void Output::service(const Frame& desired, bool writable, AcceptedCharacter* acc
 void Pd2200Backend::begin(const presentation::State& state) {
     // PD-2200 physical transport: UART1 TX on GP4, transmit-only, 9600 8N1.
     Serial2.setTX(pins::vfd_tx);
-    Serial2.setRX(-1); // GP5 reserved; display path is transmit-only.
+    Serial2.setRX(-1); // UART1 is transmit-only; the VFD claims no RX GPIO.
     Serial2.begin(9600, SERIAL_8N1);
-    delay(500); // Allow separately powered PD-2200 hardware to settle.
-    display_.begin();
-    const auto initial = render(state.clock, state.pulse, state.now_us, state.zone);
-    writeInitialFields(display_, initial);
-    output_.reset(initial);
-    Serial2.flush();
+    // Preserve the separately powered display's settling interval without
+    // stalling GPS/PPS servicing or watchdog progress in the main loop.
+    (void)state;
+    output_.reset(Frame{});
+    startup_at_ms_ = millis();
+    startup_ = Startup::settling;
 }
 
 void Pd2200Backend::service(const presentation::State& state) {
+    const uint32_t now_ms = millis();
+    if (startup_ == Startup::settling) {
+        if (static_cast<uint32_t>(now_ms - startup_at_ms_) < 500 ||
+            Serial2.availableForWrite() < 2) return;
+        display_.beginReset();
+        startup_at_ms_ = now_ms;
+        startup_ = Startup::reset_wait;
+        return;
+    }
+    if (startup_ == Startup::reset_wait) {
+        if (static_cast<uint32_t>(now_ms - startup_at_ms_) < 100 ||
+            Serial2.availableForWrite() < 6) return;
+        startup_ = Startup::configure;
+    }
+    if (startup_ == Startup::configure) {
+        display_.configure();
+        startup_ = Startup::active;
+        return;
+    }
     const auto desired = render(state.clock, state.pulse, state.now_us, state.zone);
+#if !defined(AAC_DISPLAY_STDOUT)
     static char last_hh[2] = {}, last_label[3] = {};
     const bool changed = std::memcmp(last_hh, desired.rows[0] + 7, 2) != 0 ||
                          std::memcmp(last_label, desired.rows[0] + 3, 3) != 0;
@@ -143,9 +164,11 @@ void Pd2200Backend::service(const presentation::State& state) {
             Serial.availableForWrite() >= length)
             Serial.write(reinterpret_cast<const uint8_t*>(message), length);
     }
+#endif
 
     AcceptedCharacter accepted;
     output_.service(desired, Serial2.availableForWrite() > 0, &accepted);
+#if !defined(AAC_DISPLAY_STDOUT)
     if (accepted.valid && accepted.hh_pair && accepted.complete) {
         char message[112];
         const int length = std::snprintf(message, sizeof(message),
@@ -157,5 +180,7 @@ void Pd2200Backend::service(const presentation::State& state) {
             Serial.availableForWrite() >= length)
             Serial.write(reinterpret_cast<const uint8_t*>(message), length);
     }
+#endif
 }
 }
+#endif

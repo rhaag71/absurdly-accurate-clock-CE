@@ -17,6 +17,7 @@ using CommandHandler = void (*)(void*, Command, int64_t, Console&);
 class Console {
 public:
     bool inConsole() const { return console_mode_; }
+    bool hasPendingOutput() const { return response_used_ != 0 || (!console_mode_ && diag_used_ != 0); }
     uint32_t diagnosticBytesDropped() const { return diagnostic_drops_; }
     uint32_t responseBytesDropped() const { return response_drops_; }
 

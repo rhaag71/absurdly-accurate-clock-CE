@@ -1,3 +1,4 @@
+#if defined(AAC_DISPLAY_VFD)
 #include "pd2200.hpp"
 
 namespace pd2200 {
@@ -9,12 +10,14 @@ uint8_t visibleByte(char value) {
 }
 }
 void Display::begin() {
-    // Noritake command protocol sequence for the verified PD-2200 setup.
-    // The command bytes are separate from the physical UART/RS-232 transport.
+    beginReset();
+    configure();
+}
+void Display::beginReset() {
     const uint8_t reset[] = {0x1B, 0x49}; // ESC I
     uart_.write(reset, sizeof(reset));
-    delay(100); // Allow reset to settle before configuration.
-
+}
+void Display::configure() {
     const uint8_t configure[] = {
         0x16,             // Cursor off.
         0x1B, 0x4C, 0x3F, // Preserve the bench-approved brightness bytes.
@@ -23,7 +26,6 @@ void Display::begin() {
     };
     uart_.write(configure, sizeof(configure));
 }
-
 void Display::clear() {
     const uint8_t command[] = {0x0E, 0x0C};
     uart_.write(command, sizeof(command));
@@ -72,3 +74,4 @@ void Display::writeChar(uint8_t row, uint8_t column, char value) {
 }
 
 }
+#endif

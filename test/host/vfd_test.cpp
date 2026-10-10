@@ -1,5 +1,7 @@
 #include "pd2200.hpp"
 #include "clock_vfd.hpp"
+#include <Arduino.h>
+#include "../../src/clock_vfd.cpp"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -33,6 +35,16 @@ void finish(Output& output, const Frame& target) {
     for(unsigned i=0;i<200;++i) output.service(target,true);
 }
 int main() {
+    // The optional backend configures UART1 TX on GP4 and disables RX without
+    // claiming GP5. This checks the Pico-facing contract, not MAX3232 wiring.
+    presentation::State startup_state;
+    clock_display::Pd2200Backend backend;
+    backend.begin(startup_state);
+    assert(Serial2.tx == 4);
+    assert(Serial2.rx == -1);
+    assert(Serial2.baud == 9600);
+    assert(Serial2.begin_count == 1);
+
     Sink sink; pd2200::Display display(sink);
     display.begin();
     const std::vector<uint8_t> expected_init={0x1b,0x49,0x16,0x1b,0x4c,0x3f,0x0e,0x0c};

@@ -14,6 +14,7 @@ int main() {
     assert(Serial1.baud == 9600);
     assert(Serial1.begin_count == 1);
     assert(Serial2.begin_count == 0); // Common hardware setup must not start VFD UART1.
+    assert(Serial2.tx == -1 && Serial2.rx == -1); // No default VFD GPIO configuration.
     assert(configured_pin == pins::gps_pps);
     assert(configured_mode == INPUT);
 }

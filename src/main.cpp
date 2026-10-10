@@ -7,7 +7,8 @@
 #include "monotonic_time.hpp"
 #include "ce_config.hpp"
 #include "gps_input_source.hpp"
-#include "display_backend.hpp"
+#include "display_selection.hpp"
+#include "display_output.hpp"
 #include "presentation_state.hpp"
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #include "dev_console.hpp"
@@ -85,7 +86,34 @@ void reportTransitions() {
     locked = state.pps_locked;
 }
 
-display_backend::Selected display;
+#if defined(AAC_DISPLAY_STDOUT)
+class UsbDisplaySink final : public display_output::Sink {
+public:
+    display_output::Availability availability(size_t required) const override {
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        if (development_console.inConsole()) return display_output::Availability::quiet;
+        if (development_console.hasPendingOutput()) return display_output::Availability::blocked;
+#else
+        if (usb_used != 0) return display_output::Availability::blocked;
+#endif
+        return Serial && Serial.availableForWrite() >= static_cast<int>(required)
+            ? display_output::Availability::ready : display_output::Availability::blocked;
+    }
+    bool write(const uint8_t* bytes, size_t length) override {
+        return availability(length) == display_output::Availability::ready &&
+               Serial.write(bytes, length) == length;
+    }
+};
+UsbDisplaySink usb_display_sink;
+#if defined(AAC_DISPLAY_VFD)
+display_selection::Selected display{
+    stdout_display::Driver{usb_display_sink}, clock_display::Pd2200Backend{}};
+#else
+display_selection::Selected display{stdout_display::Driver{usb_display_sink}};
+#endif
+#elif defined(AAC_DISPLAY_VFD)
+display_selection::Selected display{clock_display::Pd2200Backend{}};
+#endif
 uint32_t last_service_us = 0;
 bool discard_rx = true; // Startup delays buffered bytes without arrival timestamps.
 clock_model::Reception reception;

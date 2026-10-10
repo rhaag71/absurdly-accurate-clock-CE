@@ -17,6 +17,8 @@ public:
     // (0x0C) is a separate command. Do not generalize this to other displays.
     // Use for initialization or major layout changes only.
     void clear();
+    void beginReset();
+    void configure();
     // Zero-based direct position. Returns false without writing for an invalid cell.
     bool position(uint8_t row, uint8_t column);
     // At most length characters, bounded to this row; no terminator/padding sent.

@@ -56,16 +56,34 @@ physical verification.
 
 ## Display architecture
 
-- Keep display hardware behind the display-independent backend boundary. The
-  existing PD-2200/Noritake-compatible backend remains supported. Its current
-  interface uses UART1 through a MAX3232; the display uses a Noritake-compatible
-  serial command protocol.
-- Dad's selected display is one 8x32 WS2812B RGB flexible PCB. WS2812 support is
-  not implemented. The planned DATA signal is GP8 through an SN74HCT541N powered
-  from 5 V, with approximately 330-ohm series resistance, 100 nF local bypass,
-  and shared Pico/display ground. The level shifter and supporting parts are
-  planned for a small perfboard attached to the display module. These are
-  proposed electrical details, not qualified hardware.
+- Compile-time display selection uses `AAC_DISPLAY_STDOUT`, `AAC_DISPLAY_VFD`,
+  and future driver flags. With no explicit selection the application selects
+  STDOUT. Explicit physical drivers do not add STDOUT unless its flag is also
+  selected. No runtime discovery or plugin loading is used.
+- Keep presentation state device-independent and read-only to display code.
+  The generic display framework only composes selected drivers and passes the
+  same snapshot to each; it contains no device protocol or rendering rules.
+- Drivers own formatting, buffers, update cadence, hardware initialization,
+  transport, and backpressure. Keep service bounded and nonblocking so display
+  faults or absence cannot stop GPS/PPS timekeeping or watchdog progress.
+  Multiple heterogeneous drivers may be composed statically.
+- STDOUT is a separate display driver using the shared USB CDC transport. It
+  is distinct from diagnostics and the development console, respects quiet
+  console mode, and retains at most one replaceable output line.
+- The optional PD-2200 adapter/driver preserves verified Noritake-compatible
+  behavior. When selected it owns UART1 TX on GP4 (physical pin 6) through
+  MAX3232; UART1 RX is disabled and GP5 remains available. MAX3232 labeling and
+  DB9 wiring quirks are specific to the external hardware and do not change
+  the Pico GPIO contract. No default consumer build initializes UART1 or
+  assumes MAX3232 hardware.
+- Dad's selected display is the **WS2812 8x32 Panel**, one 8-row by 32-column
+  matrix with 256 RGB pixels. Its driver is not implemented. Planned DATA is
+  GP8 (Pico 2 physical pin 11) through an SN74HCT541N at 5 V and approximately
+  330-ohm series resistance, with local bypass and shared ground. These
+  electrical details remain unqualified; do not invent pixel order or power
+  limits.
+- Do not allocate GP8, PIO, DMA, a pixel framebuffer, or configure panel
+  hardware until its driver is authorized and implemented.
 - Do not invent matrix serpentine mapping, connector orientation, pixel order,
   measured current, or final power limits. Keep experimentally verified device
   behavior distinct from behavior inferred from manuals.
@@ -73,16 +91,17 @@ physical verification.
   unrelated hardware, and slow display operations must not block authoritative
   timing. The backend contract must not require every display to support RGB,
   pixels, framebuffers, animation, or instantaneous updates.
-- Future multi-display composition is an approved architectural requirement:
-  heterogeneous outputs may consume shared presentation state with separate
-  responsibilities and update cadences. Concurrent backends and composition
-  are not implemented; do not add them as part of unrelated work.
+- Multi-display composition is implemented as a small compile-time tuple
+  framework. Each selected driver receives one shared presentation snapshot;
+  scheduling remains cooperative and drivers must keep each service call
+  bounded. Do not add dynamic registries or heap allocation.
 
 ## Hardware ownership
 
-- GPIO assignments are centralized in `include/pins.hpp`. Current assignments:
-  GPS UART0 uses GP0/GP1; GPS PPS input uses GP2. The existing PD-2200 interface
-  uses UART1 through MAX3232. GP8 is only a proposed WS2812 data output.
+- GPIO assignments are centralized in `include/pins.hpp`. GPS UART0 uses
+  GP0/GP1 and GPS PPS uses GP2 in production. GP4 is optional VFD UART1 TX;
+  GP5 is unassigned and available. GP8 is planned for WS2812 DATA and remains
+  uninitialized.
 - Inspect the pin map and owning module before changing assignments. Do not
   treat planned pins or platform-capable peripherals as active allocations.
 

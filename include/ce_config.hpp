@@ -5,7 +5,7 @@
 #include "display_time.hpp"
 
 // Compile-time product and presentation choices. Profile selection is
-// independent from display backend selection (see display_backend.hpp).
+// independent from compile-time output selection (see display_selection.hpp).
 #if defined(AAC_BUILD_PROFILE_PRODUCTION) && defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #error "Select exactly one AAC-CE build profile"
 #elif defined(AAC_BUILD_PROFILE_PRODUCTION)
@@ -18,14 +18,6 @@
 
 namespace ce_config {
 enum class BuildProfile : uint8_t { production, development };
-enum class DisplayBackend : uint8_t {
-    pd2200,
-    ws2812,
-    max7219_matrix,
-    max7219_seven_segment,
-    spi_tft,
-    character_vfd,
-};
 enum class HourFormat : uint8_t { twelve_hour, twenty_four_hour };
 enum class DstRule : uint8_t { none, contemporary_us };
 enum class Theme : uint8_t { default_theme };
@@ -34,14 +26,6 @@ enum class Theme : uint8_t { default_theme };
 constexpr BuildProfile build_profile = BuildProfile::production;
 #else
 constexpr BuildProfile build_profile = BuildProfile::development;
-#endif
-
-// The selector is separate from the profile selector. Only PD-2200 currently
-// has a driver; the other enum values reserve typed configuration choices.
-#if defined(AAC_DISPLAY_BACKEND_PD2200)
-constexpr DisplayBackend display_backend = DisplayBackend::pd2200;
-#else
-#error "Select a supported AAC-CE display backend"
 #endif
 
 constexpr unsigned long gps_baud = 9600;

@@ -134,8 +134,8 @@ future milestone changes the build packaging or measurement method.
 The profile difference is not a historical growth delta. Major source-level
 differences are the production real GPS input versus development simulated
 GPS/PPS input, plus the development-only USB console and its buffers. The
-shared parsers, timebase, display abstraction, and PD-2200 backend are present
-in both. No per-module flash or SRAM attribution is inferred from total build
+shared parsers, timebase, framework, and default STDOUT driver are present in
+both. No per-module flash or SRAM attribution is inferred from total build
 differences.
 
 Build warnings/resource concerns: both PlatformIO builds succeeded without
@@ -154,14 +154,13 @@ selected backend implementation.
 | GP0 | GPS UART0 TX (`Serial1`) | Active | Unallocated | Real GPS initializer is excluded from development. |
 | GP1 | GPS UART0 RX (`Serial1`) | Active | Unallocated | Real GPS initializer is excluded from development. |
 | GP2 | GPS PPS input, rising-edge interrupt | Active | Unallocated | No physical PPS interrupt is registered for simulated input. |
-| GP4 | PD-2200 UART1 TX (`Serial2`) through MAX3232 | Active | Active | Backend sets UART1 TX to GP4 in both profiles. |
-| GP5 | PD-2200 UART1 RX | Reserved / not driven | Reserved / not driven | Pin map reserves GP5; backend calls `Serial2.setRX(-1)` for transmit-only use. |
+| GP4 | Optional PD-2200 UART1 TX (`Serial2`) through MAX3232 | Unallocated | Unallocated | Claimed only when `AAC_DISPLAY_VFD` is selected. |
+| GP5 | Unassigned / available | Unallocated | Unallocated | VFD has no RX GPIO; `Serial2.setRX(-1)` disables UART1 RX when VFD is selected. |
 | GP8 | Proposed WS2812 DATA | Planned | Planned | No driver, pin setup, or active allocation. |
 | GP6, GP9–GP22 | No current CE assignment identified | Unassigned | Unassigned | GP8 is separately listed above. No peripheral use is inferred from RP2350 capability. |
 | Board-defined `LED_BUILTIN` | Heartbeat output in `main.cpp` | Active | Active | Source uses the board macro; no numeric GPIO is assigned in project pin map, so the exact mapping is not asserted here. |
 
-No physical GPS UART/PPS pins are initialized by the development profile.
-Production and development both initialize the current PD-2200 UART output.
+No physical GPS UART/PPS pins are initialized by the development profile. Default production and development builds select STDOUT and initialize no VFD pins or UART1.
 No additional wiring, connector orientation, or WS2812 pixel order is
 established by this ledger.
 
@@ -170,7 +169,7 @@ established by this ledger.
 | Resource | Current status | Ownership / evidence |
 | --- | --- | --- |
 | UART0 | Active in production only | GPS UART at configured 9,600 baud, 8N1, GP0/GP1. Development excludes `gps_input_real.cpp` and `hardware.cpp`; simulated events use no physical GPS UART. |
-| UART1 | Active in both profiles | PD-2200 transmit-only at 9,600 baud, 8N1, GP4 through MAX3232; RX is disabled and GP5 is reserved. |
+| UART1 | Unallocated in default profiles; conditional optional VFD resource | When `AAC_DISPLAY_VFD` is selected, PD-2200 uses transmit-only 9,600 baud, 8N1 on GP4 through MAX3232; RX disabled. Arduino-Pico exposes a global `Serial2` object in the default ELF, but application code does not call or initialize it. |
 | USB CDC / `Serial` | Active in both profiles | USB diagnostics at 115,200 baud. Development also uses the console. I/O is serviced in bounded per-loop work. USB core internal buffering is not separately inventoried. |
 | GPS PPS interrupt | Active in production only | Rising-edge `attachInterrupt` on GP2 captures `micros()` and increments the real-source sequence. No PPS ISR is attached in development. |
 | Watchdog | Active in both profiles | RP2350 watchdog enabled for 4,000 ms. The main loop feeds it after input, diagnostics, heartbeat, timebase, and display service complete. |
@@ -204,8 +203,8 @@ second time.
 | Simulated fault state and receiver/delivered pulse snapshots | Added in Stage 2C.2; no new buffer. Whole-profile static SRAM change is build-derived at +16 B; individual object size is not isolated. | Development only |
 | RMC parser line storage | 128 bytes | Both profiles |
 | GGA parser line storage | 128 bytes | Both profiles |
-| Display frame | Two 21-byte rows (20 display cells plus terminator per row), from `clock_display::Frame` | Both profiles |
-| Display output command | 5 bytes maximum per `clock_display::Output` | Both profiles |
+| STDOUT pending output | 112-byte fixed line buffer, replaceable by current state; each service submits at most one whole line when CDC has room | Both default profiles |
+| VFD frame and output command | Two 21-byte rows and 5-byte maximum command, from `clock_display::Frame`/`Output` | VFD-selected builds only; absent from defaults |
 | GPS source, timebase, reception and display objects | Persistent globals in `src/main.cpp`; included in ELF totals. Aggregate per-object attribution was not established. | Profile-dependent source; shared timebase/display |
 
 ELF inspection with `arm-none-eabi-nm -S -C` confirmed the production
@@ -241,21 +240,32 @@ measured hardware timing or CPU-utilization results.
 | Simulator schedule | 1,000,000 µs PPS period; RMC starts 200,000 µs after its pulse; events over 20,000 µs late are dropped | Development-only synthetic timing; not evidence of physical timing accuracy. |
 | Simulated fault schedules | EARLY RMC starts at 5,000 µs after PPS (first byte timestamp 6,041 µs); LATE starts at 880,000 µs (CR completion 916,458 µs); LATE omits GGA | Deterministic development-only schedules, verified in native virtual-time tests. Not physical receiver measurements. |
 | Development console input/output | Up to 32 input bytes and 64 output bytes per loop | Bounded USB service; no measured USB throughput or timing margin. |
-| Display output | At most one PD-2200 command byte per service call when UART writable | Backend work is bounded; actual wire/backpressure behavior is hardware dependent. |
+| Display output | STDOUT submits at most one bounded line per service; VFD emits at most one payload byte per service after bounded startup command batches | Software service work is bounded; USB/UART transport behavior is hardware dependent. |
 | Watchdog | 4,000 ms timeout; recurring feed at end of completed main-loop services | Hardware reset protection is implemented. Worst-case feed interval and physical reset behavior are not measured by these builds. |
 
 No loop-frequency, interrupt-latency, UART-overrun, USB-throughput, CPU-load,
-or timing-margin measurements were taken for this baseline. Existing PD-2200
-startup delays are 100 ms in display initialization and 500 ms for separately
-powered display settling; these occur during startup, not as recurring loop
-delays.
+or timing-margin measurements were taken for this baseline. Optional VFD power-on settling and reset/configure phases are now advanced
+using elapsed-time checks and bounded UART writes; no startup delay blocks the
+main loop. The WS2812 driver has no implementation or allocation.
 
 ## Display backend resource considerations
 
-### Current backend: PD-2200 / Noritake-compatible VFD
+### Default backend: STDOUT
 
-- Active in both profiles; uses UART1 (`Serial2`) transmit on GP4 at 9,600 baud,
-  8N1, through a MAX3232. RX is disabled; GP5 is reserved.
+- Selected automatically in both standard profiles; uses USB CDC output and no
+  display GPIO or UART peripheral. It keeps one replaceable 112-byte line and
+  submits at most one line (up to 112 bytes) per service when the USB sink
+  reports sufficient room. It replaces stale pending content rather than
+  queueing frames. Development
+  Console Mode suppresses STDOUT output; pending console responses/diagnostics
+  take priority.
+
+### Optional backend: PD-2200 / Noritake-compatible VFD
+
+- Not selected in default profiles. When explicitly selected, it uses UART1
+  (`Serial2`) TX on GP4 (physical pin 6) at 9,600 baud, 8N1, through a MAX3232.
+  RX is disabled and GP5 remains unassigned. MAX3232 labeling and DB9 wiring
+  quirks are external hardware details and do not change the Pico GPIO contract.
 - Presentation uses a 20-column, two-row frame. Output retains one submitted
   frame and one in-flight command buffer of at most five bytes; it does not
   queue animation frames. Frames and command storage are included in linker
@@ -323,3 +333,4 @@ No resource figures in this section are firmware build measurements.
 | --- | --- | --- | --- | --- |
 | 2026-10-09 | First resource baseline; Stage 2C.1 development-console working-tree state | Flash 46,624 B; static SRAM including vector table 11,532 B | Flash 49,640 B; static SRAM including vector table 12,116 B | Both builds and host suite passed. Console remains unverified on physical Pico 2. No prior baseline or historical resource delta exists. |
 | 2026-10-10 | Stage 2C.2 development-only simulated GPS/PPS fault injection | Flash 46,624 B (Δ 0); static SRAM 11,532 B (Δ 0) | Flash 51,648 B (Δ +2,008); static SRAM including vector table 12,132 B (Δ +16) | Both builds and host fault/regression suite passed. No GPIO/peripheral assignment changes. Physical Pico 2 fault-injection verification is **PENDING**. |
+| 2026-10-10 | Compile-time display framework and default STDOUT | Flash 44,888 B (Δ −1,736); `.data + .bss` 11,312 B; static SRAM including vector table 11,584 B (Δ +52) | Flash 46,520 B (Δ −5,128); `.data + .bss` 11,632 B; static SRAM including vector table 11,904 B (Δ −228) | Build-derived from default STDOUT profiles. Removed default VFD-linked code and VFD buffers; exact per-driver deltas are not isolated. One-off `pico2` VFD-only build: 46,664 B flash / 11,268 B `.data + .bss` / 11,540 B including vector table. One-off STDOUT+VFD build: 46,672 B / 11,400 B / 11,672 B including vector table. Host regression suite and both default builds passed; no physical verification. |

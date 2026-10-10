@@ -28,18 +28,20 @@ integration URL avoids relying on ambiguous registry platform support.
 
 The CE build currently defaults to UTC and has no physical UI button. Timezone
 conversion remains presentation-only and supports the inherited U.S. zones; see
-[timezone notes](docs/display-timezone.md). The selected Dad build will use a
-WS2812B 8×32 RGB matrix, but its driver is not implemented yet.
-See the [CE engineering baseline](docs/ce-engineering-baseline.md) for selected
-hardware, backend boundaries, and unverified items.
+[timezone notes](docs/display-timezone.md). Dad's selected consumer hardware is
+the **WS2812 8x32 Panel**: one 8-row by 32-column panel with 256 RGB pixels. Its
+driver is not implemented yet. See the [CE engineering baseline](docs/ce-engineering-baseline.md)
+for hardware status and resource ownership.
 
 ## Layout and architecture
 
-- `src/main.cpp`: cooperative GPS/PPS, compile-time-selected display and USB diagnostic servicing.
+- `src/main.cpp`: cooperative GPS/PPS, compile-time display composition, USB diagnostics, and watchdog servicing.
 - `src/hardware.cpp` and `include/hardware.hpp`: UART and PPS initialization.
-- `include/presentation_state.hpp`: coherent clock-derived snapshot supplied to display backends.
-- `include/display_backend.hpp`: compile-time backend selector; current selection is PD-2200.
-- `src/pd2200.cpp` and `include/pd2200.hpp`: PD-2200 Noritake-command encoding.
+- `include/presentation_state.hpp`: device-independent clock snapshot supplied to display drivers.
+- `include/display_framework.hpp` and `include/display_selection.hpp`: static composition and compile-time selection.
+- `include/stdout_display.hpp` and `src/stdout_display.cpp`: bounded USB CDC clock output driver.
+- `src/clock_vfd.cpp` and `include/clock_vfd.hpp`: optional PD-2200 presentation adapter.
+- `src/pd2200.cpp` and `include/pd2200.hpp`: optional PD-2200 command encoder and device behavior.
 - `include/pins.hpp`: single source of truth for the GPIO contract.
 - `include/clock_state.hpp`: authoritative UTC timebase, initially invalid and unlocked.
 - `src/display_time.cpp`: presentation-only civil time and contemporary U.S. DST.
@@ -51,26 +53,35 @@ GPS RMC labels are associated with PPS edges by the UTC timebase. Canonical time
 stays UTC; local-time conversion belongs at the display boundary. See
 [timebase contract](docs/pps-timebase.md) for association and validity behavior.
 
-The current build selects the inherited Posiflex PD-2200 backend. The display
-architecture accepts a clock-derived presentation snapshot and does not require
-every backend to use pixels, RGB, or animation. A future backend supplies its
-own renderer/mapping and transport behind the compile-time selector. No
-WS2812, MAX7219, or TFT driver is implemented in Stage 1.
+If no display macro is selected, `display_selection.hpp` defaults to STDOUT.
+Explicit physical drivers do not implicitly include STDOUT; selecting both
+`AAC_DISPLAY_STDOUT` and `AAC_DISPLAY_VFD` composes both. `AAC_DISPLAY_VFD` is
+optional and preserves the existing PD-2200 implementation. Selection is
+compile-time only. Drivers receive the same `presentation::State`, own their
+rendering and hardware, and must make bounded nonblocking progress. The
+authoritative UTC engine has no display-driver dependency.
 
-The PD-2200 operates in **Noritake serial command mode**, configured for 9600
+When explicitly selected, the PD-2200 operates in **Noritake serial command mode**, configured for 9600
 baud, 8N1. For the verified PD-2200, command `0x0E` clears displayed characters
 without resetting the current write/cursor position; `0x0C` homes separately.
 This PD-2200 behavior must not be generalized to other Noritake-compatible
 displays. Protocol encoding is distinct from the PD-2200-specific layout and
 workarounds, and from physical UART1/RS-232 transport through the MAX3232.
 
+Default `pico2` and `pico2-dev` builds use STDOUT and do not initialize UART1,
+GP4, or GP5 for the VFD. The optional VFD driver initializes UART1 TX on GP4
+(physical pin 6) only when selected; RX is disabled and GP5 remains available.
+The planned WS2812 data connection is GP8
+(Pico 2 physical pin 11) through an SN74HCT541N. GP8 is not initialized, and no
+panel driver, PIO, DMA, or pixel framebuffer is present.
+
 ## Unattended recovery
 
 The RP2350 hardware watchdog recovers a wedged firmware main loop after **4,000 ms**
 without a feed. It is enabled at the start of setup (covering startup stalls too)
 and fed only after all recurring main-loop services complete, never by an ISR or
-timer. This leaves ample margin over the 600 ms of VFD startup delays and UART
-drain; normal loop work is bounded. GPS/PPS loss, invalid UTC, display faults or
+timer. Normal loop work is bounded; VFD power-on settling is serviced
+asynchronously when that optional driver is selected. GPS/PPS loss, invalid UTC, display faults or
 backpressure do not intentionally cause resets.
 
 Recovery follows normal startup: GPS/UTC validity and PPS lock must be acquired
@@ -136,8 +147,8 @@ input/output directions are relative to the Pico.
 | GP0 | GPS UART0 TX (`Serial1`) |
 | GP1 | GPS UART0 RX (`Serial1`) |
 | GP2 | GPS PPS input |
-| GP4 | PD-2200 UART1 TX (`Serial2`) via MAX3232 |
-| GP5 | UART1 RX, reserved and disabled |
+| GP4 | PD-2200 UART1 TX (`Serial2`) via MAX3232, only when VFD is selected |
+| GP5 | Unassigned and available |
 | GP6–GP7 | Unassigned |
 | GP8 | Proposed WS2812 data output; not implemented or physically tested |
 | GP9–GP22 | Unassigned |

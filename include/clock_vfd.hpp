@@ -42,7 +42,10 @@ public:
     void begin(const presentation::State& state);
     void service(const presentation::State& state);
 private:
+    enum class Startup : uint8_t { settling, reset_wait, configure, active };
     pd2200::Display display_;
     Output output_;
+    Startup startup_ = Startup::settling;
+    uint32_t startup_at_ms_ = 0;
 };
 }

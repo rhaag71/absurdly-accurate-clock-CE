@@ -1,3 +1,4 @@
+#if defined(AAC_DISPLAY_VFD)
 #include "clock_display.hpp"
 #include <cstring>
 
@@ -62,3 +63,4 @@ Update difference(const Frame& before, const Frame& after) {
     return update;
 }
 }
+#endif

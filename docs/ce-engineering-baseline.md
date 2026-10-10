@@ -19,11 +19,12 @@ Every item below is explicitly classified as one of:
 - **Unverified / requires hardware testing** — evidence is insufficient to claim
   physical behavior; this may accompany a selected design or inherited code.
 
-The CE source has compile-time production and development profiles and separate
-compile-time GPS-input and display-backend selection. Both profiles use the
-inherited AAC timebase and current PD-2200 backend. Production selects physical
-GPS UART/PPS; development selects the deterministic simulated receiver. The
-WS2812 backend and additional display backends are not implemented.
+The CE source has compile-time production/development profiles, GPS-input
+selection, and display selection. Both profiles use the same authoritative
+timebase. Production selects physical GPS/PPS; development selects simulated
+GPS/PPS. Both default to the bounded USB CDC STDOUT display. The optional
+PD-2200 driver can be selected explicitly. The selected consumer WS2812 8x32
+Panel driver remains unimplemented.
 
 ## Repository evidence: current implementation
 
@@ -33,12 +34,14 @@ WS2812 backend and additional display backends are not implemented.
 | GPS UART0 and separate PPS input | **Implemented in inherited AAC firmware** | `pins.hpp`, `hardware.cpp`, and `main.cpp` configure UART0 (`Serial1`) on GP0/GP1 and rising-edge PPS on GP2. The timing code associates RMC UTC labels with PPS captures. |
 | GPS/PPS qualification and UTC state | **Implemented in inherited AAC firmware** | `clock_state.*` tracks GPS validity, PPS presence/lock, and UTC validity. It requires two consecutive coherent RMC labels and a subsequent qualifying edge to commit. The detailed windows and failure behavior are in [pps-timebase.md](pps-timebase.md). |
 | Inherited timebase loss behavior | **Implemented in inherited AAC firmware** | On loss of qualification UTC becomes invalid; source inspection shows no oscillator extrapolation or prolonged holdover. A briefly fresh PPS after the last RMC is not holdover. |
-| Current display backend | **Implemented in inherited AAC firmware** | `pd2200.*` and `clock_display.*` implement a Posiflex PD-2200 serial VFD through UART1/GP4. This is not the proposed CE LED panel. README documents bench-verified VFD wiring/characters for the reported test setup; it does not verify CE display hardware. |
+| Display framework and STDOUT | **Implemented specifically for CE** | `display_selection.hpp` defaults to STDOUT only when no driver is named; explicit selections compose only those drivers. STDOUT uses a bounded USB CDC line and is quiet during development console mode. |
+| Optional PD-2200 driver | **Implemented in inherited AAC firmware; optional in CE** | Explicit VFD selection includes the presentation adapter and verified PD-2200 command driver. It uses UART1 TX on GP4 / physical pin 6 only; RX is disabled and GP5 remains available. MAX3232 labeling and DB9 wiring quirks are external hardware details. The physical display is not the selected consumer hardware. |
+| Selected consumer display | **Selected design / approved requirement** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Its GP8 DATA interface and PIO driver are planned only; no panel driver or physical panel verification exists. |
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
-| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Production compiles the real UART/PPS source; development compiles the simulated source and USB console. Stage 2C.2 receiver fault injection is development-only; physical Pico 2 verification remains pending. |
-| CE display, graphics, personalization, and enclosure direction | **Selected design / approved requirement** | The display boundary and PD-2200 backend are implemented in Stage 1. Compile-time profile selection and typed configuration defaults are implemented in Stage 2A. No LED framebuffer/backend, font/animation/theme system, or prototype light-well/enclosure implementation is included. |
+| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | Production compiles real UART/PPS; development compiles simulated input, console, and fault injection. Both compile the same display-selection mechanism, defaulting to STDOUT. |
+| Display framework | **Implemented specifically for CE** | Static compile-time composition passes one coherent snapshot to each selected driver. No runtime plugin registry is present. WS2812 is not yet selectable as an implemented driver. |
 
 ## CE engineering decisions and requirements
 
@@ -53,7 +56,7 @@ The current source still determines what is implemented.
 | Retain original AAC GPS/PPS timing architecture | **Selected design / approved requirement** | Retain GPS UTC label + separate PPS qualification/association + authoritative UTC, with presentation downstream. Current inherited implementation is the starting point. |
 | NEO-7 GPS on UART0 plus separate PPS | **Selected design / approved requirement** | GP0/GP1 UART0 and GP2 PPS match current inherited assignments. The exact receiver configuration and PPS-to-RMC absolute relationship remain subject to receiver-specific confirmation. |
 | Standalone clock; no Wi-Fi or AAC-Bridge | **Selected design / approved requirement** | Dad's selected build has no Wi-Fi, AAC-Bridge, or physical UI button. Stage 1 removes active Bridge and button support from CE. |
-| Hardware-independent compile-time display backend | **Implemented specifically for CE** | A coherent presentation snapshot is passed to a statically selected backend. The shared contract does not require pixels, RGB, or animation. The inherited PD-2200 backend is selected in the current build. |
+| Compile-time display framework | **Implemented specifically for CE** | `display_selection.hpp` selects STDOUT by default, or exactly the explicitly named driver set. `display_framework::Framework` passes the same read-only snapshot to each selected driver. |
 | WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / approved requirement** | One panel is selected for Dad's build. No panel driver or physical panel is present. |
 | RP2350 PIO drives WS2812B data | **Selected design / approved requirement** | Intended output mechanism. No PIO LED implementation is present. |
 | 74HCT541 5 V level shifter and approximately 330 Ω series resistor | **Selected design / approved requirement** | Electrical interface direction. Values, placement, supply/ground details, signal integrity, and actual panel compatibility require schematic review and bench testing before hardware claims. |
@@ -75,9 +78,9 @@ The current source still determines what is implemented.
 
 **Implemented specifically for CE:** `platformio.ini` defines `pico2`
 (production) and `pico2-dev` (development), both targeting the same Pico 2 /
-RP2350 board, Arduino-Pico framework, and dependency set. The selected display
-backend is a separate build definition from the profile; both current profiles
-select the inherited PD-2200 implementation.
+RP2350 board, Arduino-Pico framework, and dependency set. Display selection is independent of profile selection. With no `AAC_DISPLAY_*`
+definition, both profiles select STDOUT. Explicit VFD selection does not add
+STDOUT; `AAC_DISPLAY_STDOUT` may be combined with one or more physical drivers.
 
 `include/ce_config.hpp` centralizes strongly typed compile-time settings for
 the selected profile and backend, GPS baud, civil timezone and DST rule,
@@ -157,24 +160,22 @@ timebase. Supported commands and exact scheduled offsets are recorded in the
 [Consumer Edition requirements](Consumer-Edition-Requirements). Host fault
 tests pass; physical Pico 2 verification remains pending.
 
-## Display backend and PD-2200 boundaries
+## Display framework and driver boundaries
 
 **Implemented specifically for CE:** `presentation::State` is a value snapshot
 containing clock quality/time, pulse phase data, and selected civil zone. The
-main loop derives it from the clock and passes it to a statically selected
-backend. Backend selection is a build-time macro in the current PlatformIO
-environment; there is no runtime plugin registry. A future backend will provide
-its own selected implementation and keep pixel ordering, character mapping,
-rendering/effects, and physical transport behind that boundary. The shared
-contract does not demand pixels, RGB, or animation. Only the inherited PD-2200
-backend is implemented and selectable now.
+main loop derives it from clock state and passes the same const snapshot to a
+static compile-time composition. The generic framework has no device protocol
+or hardware behavior. STDOUT and the optional PD-2200 driver are implemented;
+the WS2812 driver is not.
 
 The architecture is intended to accommodate the selected WS2812 RGB matrix,
 MAX7219 monochrome matrices, MAX7219 seven-segment modules, SPI TFT LCDs,
 character VFDs (including the current PD-2200), and later technologies. These
 are backend targets, not drivers supplied by Stage 1.
 
-**Approved future requirement — multi-display composition:** configurations
+**Implemented framework capability / future routing work — multi-display
+composition:** configurations
 may assign different parts of one presentation to multiple heterogeneous
 physical displays. For example, a robotic arm could indicate hours, an LCD
 minutes, an LED matrix seconds, a VFD the date or other information, and
@@ -190,10 +191,12 @@ not require every backend to support a framebuffer, pixels, RGB, characters,
 or instantaneous updates. Each backend owns its physical behavior and
 transport, and composition must not create another time authority.
 
-This is a future architectural requirement, not Stage 1 functionality. Stage 1
-supports one compile-time-selected backend through `display_backend::Selected`;
-multiple concurrent backends, routing, scheduling, and asynchronous operations
-are not implemented. Dad's selected display remains one WS2812B 8×32 RGB panel.
+Static selection of multiple drivers is implemented. The current framework
+services each selected driver in order once per loop and does not route
+different fields to different backends. Drivers must keep each service bounded;
+independent asynchronous cadence and output state belong to each driver. The
+selected consumer hardware remains one WS2812 8x32 Panel, whose driver is not
+implemented.
 
 To add a backend later, implement a concrete type with `begin(const
 presentation::State&)` and `service(const presentation::State&)`;
