@@ -1,6 +1,12 @@
+#include <Arduino.h>
+#include <cstdio>
+#include <cstring>
 #include "clock_vfd.hpp"
+#include "pins.hpp"
 
 namespace clock_display {
+Pd2200Backend::Pd2200Backend() : display_(Serial2), output_(Serial2) {}
+
 void writeInitialFields(pd2200::Display& display, const Frame& initial) {
     display.writeField(0, 3, initial.rows[0] + 3, 3);  // centered UTC
     display.writeField(0, 7, initial.rows[0] + 7, 10); // HH:MM:SS.X
@@ -95,5 +101,61 @@ void Output::service(const Frame& desired, bool writable, AcceptedCharacter* acc
         }
     }
     if (++next_ == size_) size_ = next_ = 0;
+}
+
+void Pd2200Backend::begin(const presentation::State& state) {
+    // PD-2200 physical transport: UART1 TX on GP4, transmit-only, 9600 8N1.
+    Serial2.setTX(pins::vfd_tx);
+    Serial2.setRX(-1); // GP5 reserved; display path is transmit-only.
+    Serial2.begin(9600, SERIAL_8N1);
+    delay(500); // Allow separately powered PD-2200 hardware to settle.
+    display_.begin();
+    const auto initial = render(state.clock, state.pulse, state.now_us, state.zone);
+    writeInitialFields(display_, initial);
+    output_.reset(initial);
+    Serial2.flush();
+}
+
+void Pd2200Backend::service(const presentation::State& state) {
+    const auto desired = render(state.clock, state.pulse, state.now_us, state.zone);
+    static char last_hh[2] = {}, last_label[3] = {};
+    const bool changed = std::memcmp(last_hh, desired.rows[0] + 7, 2) != 0 ||
+                         std::memcmp(last_label, desired.rows[0] + 3, 3) != 0;
+    if (changed) {
+        std::memcpy(last_hh, desired.rows[0] + 7, 2);
+        std::memcpy(last_label, desired.rows[0] + 3, 3);
+        const auto& utc = state.clock.utc;
+        const auto local = state.clock.utc_valid
+            ? presentation::convertUtcForDisplay(utc, state.zone)
+            : presentation::DisplayTime{utc, "---", 0, false};
+        char message[128];
+        const int length = std::snprintf(message, sizeof(message),
+            "HH ms=%lu pps=%lu valid=%u utc=%02u:%02u:%02u zone=%s "
+            "civil=%02u:%02u:%02u want=%.2s cache=%.2s\r\n",
+            static_cast<unsigned long>(millis()),
+            static_cast<unsigned long>(state.pulse.sequence),
+            static_cast<unsigned>(state.clock.utc_valid), utc.hour, utc.minute,
+            utc.second, presentation::zoneName(state.zone), local.civil.hour,
+            local.civil.minute, local.civil.second, desired.rows[0] + 7,
+            output_.submitted().rows[0] + 7);
+        // Diagnostics are best-effort and must never block display servicing.
+        if (length > 0 && static_cast<size_t>(length) < sizeof(message) && Serial &&
+            Serial.availableForWrite() >= length)
+            Serial.write(reinterpret_cast<const uint8_t*>(message), length);
+    }
+
+    AcceptedCharacter accepted;
+    output_.service(desired, Serial2.availableForWrite() > 0, &accepted);
+    if (accepted.valid && accepted.hh_pair && accepted.complete) {
+        char message[112];
+        const int length = std::snprintf(message, sizeof(message),
+            "TXHH ms=%lu pps=%lu kind=pair bytes=1B4807%02X%02X want=%.2s cache=%.2s\r\n",
+            static_cast<unsigned long>(millis()),
+            static_cast<unsigned long>(state.pulse.sequence), accepted.hh[0],
+            accepted.hh[1], desired.rows[0] + 7, output_.submitted().rows[0] + 7);
+        if (length > 0 && static_cast<size_t>(length) < sizeof(message) && Serial &&
+            Serial.availableForWrite() >= length)
+            Serial.write(reinterpret_cast<const uint8_t*>(message), length);
+    }
 }
 }

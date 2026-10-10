@@ -1,6 +1,7 @@
 #pragma once
 #include "clock_display.hpp"
 #include "pd2200.hpp"
+#include "presentation_state.hpp"
 
 namespace clock_display {
 // Call only after the verified clear/home sequence. Does not transmit spaces.
@@ -31,5 +32,17 @@ private:
     uint8_t command_[5] = {};
     size_t size_ = 0, next_ = 0;
     uint8_t row_ = 0, column_ = 0;
+};
+
+// Compile-time-selected implementation of the presentation backend contract.
+// PD-2200-specific rendering, command encoding, and UART submission stay here.
+class Pd2200Backend {
+public:
+    Pd2200Backend();
+    void begin(const presentation::State& state);
+    void service(const presentation::State& state);
+private:
+    pd2200::Display display_;
+    Output output_;
 };
 }

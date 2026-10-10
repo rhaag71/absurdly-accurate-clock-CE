@@ -9,6 +9,8 @@ uint8_t visibleByte(char value) {
 }
 }
 void Display::begin() {
+    // Noritake command protocol sequence for the verified PD-2200 setup.
+    // The command bytes are separate from the physical UART/RS-232 transport.
     const uint8_t reset[] = {0x1B, 0x49}; // ESC I
     uart_.write(reset, sizeof(reset));
     delay(100); // Allow reset to settle before configuration.
@@ -16,7 +18,7 @@ void Display::begin() {
     const uint8_t configure[] = {
         0x16,             // Cursor off.
         0x1B, 0x4C, 0x3F, // Preserve the bench-approved brightness bytes.
-        0x0E,             // Clear does not home on this display.
+        0x0E,             // PD-2200: clear characters; cursor position is retained.
         0x0C,             // Home explicitly.
     };
     uart_.write(configure, sizeof(configure));

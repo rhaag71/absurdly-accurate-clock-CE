@@ -55,9 +55,9 @@ space-to-zero behavior.
 
 - `timezone_test.cpp` covers UTC identity; every standard/daylight offset and label;
   all zones one second before/at/after fixed 2024–2027 U.S. DST transitions;
-  previous-day/year/leap-day conversion; button bounce/hold/release/cycle/startup
-  and millis wrap; complete rendered zone changes and DST transitions under
-  positioned writes; unchanged authoritative UTC, rolling phases and lower row;
+  previous-day/year/leap-day conversion; complete rendered zone changes and DST
+  transitions under positioned writes;
+  unchanged authoritative UTC, rolling phases and lower row;
   acceptance reporting under stalls/rejections/cancellation, and identical byte
   streams with diagnostics observation enabled or disabled.
 
@@ -76,19 +76,3 @@ space-to-zero behavior.
   events. Existing HH zero/fuzz tests enforce no explicit position 08 and correct
   five-byte HH sequences. Fault injections remain demonstrations of downstream
   faults, not proof that the physical symptom has been repaired.
-
-- `network_test.cpp` verifies v1's exact 40-byte layout, independent CRC golden
-  vectors, corruption/header rejection, signed 64-bit epochs, quality/satellite
-  flags, inactive holdover, publication sequence/coherence, invalid/sync gating,
-  and observation of actual Timebase acquisition/second edges without mutation.
-- `network_transport_test.cpp` compiles the production native SPI1 transport with
-  a register/FIFO model to check immutable CS snapshots at every byte split,
-  short/extra/stalled transactions, subsequent realignment, TIME_SYNC qualification,
-  ignored MOSI, and summary counters. It asserts that CS-boundary FIFO priming
-  happens while SSE is clear and that SSE enables only after all initial entries
-  are written. Lifecycle regression coverage includes 700
-  duplicate low notifications without FIFO destruction, partial-byte abort cleanup,
-  explicit/coalesced GPIO events, PPS dispatch coexistence, input-only reset
-  overrides, and a separate boot-with-CS-low process. Hardware electrical timing
-  and interrupt latency are not modeled.
-- Portable ESP32-side reference vectors are in `host/network-v1-vectors.json`.

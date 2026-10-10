@@ -4,19 +4,15 @@
 #include <hardware/watchdog.h>
 #include "watchdog_policy.hpp"
 #include "clock_state.hpp"
-#include "clock_display.hpp"
-#include "clock_vfd.hpp"
-#include "zone_button.hpp"
+#include "display_backend.hpp"
+#include "presentation_state.hpp"
 #include "pins.hpp"
 #include "hardware.hpp"
-#include "pd2200.hpp"
-#include "network_interface.hpp"
 
 namespace {
 constexpr unsigned long gps_baud = 9600; // Confirm against the GPS configuration.
-constexpr unsigned long vfd_baud = 9600; // Confirm against the PD-2200 switches.
+constexpr auto selected_zone = presentation::DisplayZone::utc;
 clock_model::Timebase timebase;
-presentation::ZoneButton zone_button;
 nmea::RmcParser parser;
 nmea::GgaParser gga_parser;
 volatile uint32_t pps_count = 0;
@@ -78,56 +74,7 @@ void reportTransitions() {
     locked = state.pps_locked;
 }
 
-pd2200::Display display(Serial2);
-clock_display::Output vfd_output(Serial2);
-// Log desired HH/label changes, never every second. Cache means UART-accepted,
-// not optically verified. Formatting/enqueueing is outside ISR/UART submission.
-void reportDisplay(const clock_display::Frame& desired, const clock_model::Pulse& pulse,
-                   uint32_t now_ms, bool zone_changed) {
-    static char last_hh[2] = {}, last_label[3] = {};
-    if (!zone_changed && std::memcmp(last_hh, desired.rows[0] + 7, 2) == 0 &&
-        std::memcmp(last_label, desired.rows[0] + 3, 3) == 0) return;
-    std::memcpy(last_hh, desired.rows[0] + 7, 2);
-    std::memcpy(last_label, desired.rows[0] + 3, 3);
-    const auto& state = timebase.state();
-    const auto zone = zone_button.zone();
-    char message[256];
-    if (zone_changed) {
-        snprintf(message, sizeof(message), "ZONE ms=%lu zone=%s drop=%lu\r\n",
-                 static_cast<unsigned long>(now_ms), presentation::zoneName(zone),
-                 static_cast<unsigned long>(diagnostic_drops));
-        diagnostic(message);
-    }
-    // Do not convert an invalid/default calendar date.
-    const auto local = state.utc_valid ? presentation::convertUtcForDisplay(state.utc, zone)
-                                      : presentation::DisplayTime{state.utc, "---", 0, false};
-    const auto& u = state.utc;
-    const auto& c = local.civil;
-    snprintf(message, sizeof(message),
-        "HH ms=%lu pps=%lu epoch=%lld valid=%u utc=%04u-%02u-%02uT%02u:%02u:%02u "
-        "zone=%s mode=%s off=%d civil=%04u-%02u-%02uT%02u:%02u:%02u want=%.2s cache=%.2s drop=%lu\r\n",
-        static_cast<unsigned long>(now_ms), static_cast<unsigned long>(pulse.sequence),
-        static_cast<long long>(state.utc_seconds), static_cast<unsigned>(state.utc_valid),
-        u.year, u.month, u.day, u.hour, u.minute, u.second, presentation::zoneName(zone),
-        !state.utc_valid ? "?" : zone == presentation::DisplayZone::utc ? "UTC" :
-        local.daylight ? "DST" : "STD", local.offset_hours,
-        c.year, c.month, c.day, c.hour, c.minute, c.second,
-        desired.rows[0] + 7, vfd_output.submitted().rows[0] + 7,
-        static_cast<unsigned long>(diagnostic_drops));
-    diagnostic(message);
-}
-void reportAccepted(const clock_display::AcceptedCharacter& accepted,
-                    const clock_display::Frame& desired, const clock_model::Pulse& pulse,
-                    uint32_t now_ms) {
-    if (!accepted.valid || !accepted.hh_pair || !accepted.complete) return;
-    char message[128];
-    snprintf(message, sizeof(message),
-        "TXHH ms=%lu pps=%lu kind=pair bytes=1B4807%02X%02X want=%.2s cache=%.2s drop=%lu\r\n",
-        static_cast<unsigned long>(now_ms), static_cast<unsigned long>(pulse.sequence),
-        accepted.hh[0], accepted.hh[1], desired.rows[0] + 7,
-        vfd_output.submitted().rows[0] + 7, static_cast<unsigned long>(diagnostic_drops));
-    diagnostic(message);
-}
+display_backend::Selected display;
 uint32_t last_service_us = 0;
 bool discard_rx = true; // Startup delays buffered bytes without arrival timestamps.
 clock_model::Reception reception;
@@ -137,7 +84,7 @@ clock_model::Reception reception;
 void setup() {
     // Read the RP2350 reset cause before arming this boot's watchdog.
     watchdog_boot = watchdog_caused_reboot();
-    // Also cover startup stalls. Normal VFD delays total 600 ms plus UART drain.
+    // Also cover startup stalls.
     // Keep running under debugger halt so a halted main loop can be bench-tested.
     watchdog_enable(appliance::watchdog_timeout_ms, false);
     pinMode(LED_BUILTIN, OUTPUT);
@@ -145,19 +92,13 @@ void setup() {
     last_heartbeat_ms = millis();
     Serial.begin(115200); // USB diagnostics; never wait for a connected host.
     if (watchdog_boot) diagnostic("RESET: watchdog\r\n");
-    // Retain GPS bytes arriving during the existing VFD startup delays.
+    // Retain GPS bytes arriving while display hardware initializes.
     Serial1.setFIFOSize(1024);
-    hardware::begin(gps_baud, vfd_baud);
+    hardware::begin(gps_baud);
     attachInterrupt(digitalPinToInterrupt(pins::gps_pps), onPpsRise, RISING);
-    delay(500); // Short power-up allowance for the separately powered VFD.
-    display.begin();
-    const auto initial = clock_display::render(timebase.state());
-    clock_display::writeInitialFields(display, initial);
-    vfd_output.reset(initial);
-    Serial2.flush();
+    const presentation::State initial{timebase.state(), {}, micros(), selected_zone};
+    display.begin(initial);
     diagnostic("GPS/PPS UTC clock; RMC labels preceding PPS\r\n");
-    zone_button.begin(digitalRead(pins::ui_button) == LOW, millis());
-    clock_network::begin();
     last_service_us = micros();
 
 }
@@ -209,7 +150,6 @@ void loop() {
         --usb_used;
     }
     const uint32_t now = millis();
-    const bool zone_changed = zone_button.poll(digitalRead(pins::ui_button) == LOW, now);
     if (appliance::heartbeat_due(now, last_heartbeat_ms, watchdog_boot)) {
         last_heartbeat_ms = now;
         heartbeat_on = !heartbeat_on;
@@ -221,14 +161,8 @@ void loop() {
     timebase.poll(pulse, now_us);
     timebase.satelliteStatus().poll(now_us);
     reportTransitions();
-    clock_network::service(timebase.state(), pulse);
-    char net_message[256];
-    if (clock_network::diagnostic(net_message, sizeof(net_message), now)) diagnostic(net_message);
-    const auto desired = clock_display::render(timebase.state(), pulse, now_us, zone_button.zone());
-    reportDisplay(desired, pulse, now, zone_changed);
-    clock_display::AcceptedCharacter accepted;
-    vfd_output.service(desired, Serial2.availableForWrite() > 0, &accepted);
-    reportAccepted(accepted, desired, pulse, now);
+    const presentation::State shown{timebase.state(), pulse, now_us, selected_zone};
+    display.service(shown);
     // Sole recurring feed: all main-loop services completed. Degraded inputs,
     // absent peers and display backpressure are valid states, not reset reasons.
     watchdog_update();

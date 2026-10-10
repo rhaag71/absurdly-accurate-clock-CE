@@ -1,5 +1,9 @@
 # Clock Network Protocol v1
 
+> **Historical AAC reference only:** Stage 1 removed this SPI/AAC-Bridge and
+> TIME_SYNC subsystem from the CE firmware. The pins, wiring, protocol, and
+> transport guidance below are not an active CE interface.
+
 This is the Pico-side clock-source interface, independent of displays and the
 future ESP32 implementation. The source owns UTC; the controller is a read-only
 consumer. MOSI carries dummy bytes, never commands. No network observation can

@@ -4,6 +4,11 @@
 
 # Pico SPI diagnostic build
 
+> **Historical original AAC reference only:** these diagnostic fields and SPI/
+> TIME_SYNC instrumentation describe the original AAC subsystem. AAC-Bridge
+> SPI and TIME_SYNC are not present in the CE firmware; this document is kept
+> for its investigation history, not as a CE build or interface description.
+
 Instrumentation only: no changes to SPI configuration, FIFO pass limits, IRQ
 masks, packet construction, reset policy, CS handling policy, or TIME_SYNC.
 The existing once-per-minute NET summary retains all previous fields and adds:

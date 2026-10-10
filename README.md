@@ -24,24 +24,25 @@ This follows the [Arduino-Pico PlatformIO instructions](https://arduino-pico.rea
 Do not substitute the original Pico's `pico` board configuration. The explicit
 integration URL avoids relying on ambiguous registry platform support.
 
-## Display timezone button
+## Display and timezone
 
-GP6 (physical pin 9) selects UTC → Eastern → Central → Mountain → Pacific → UTC.
-Connect the button to GND; the internal pull-up is enabled. Each press/release is
-debounced for 30 ms, and holding does not repeat. Reset returns to UTC.
-Authoritative time remains UTC; local time uses contemporary U.S. DST rules only
-at the display boundary. See [timezone and HH diagnostics](docs/display-timezone.md)
-for rules, serial record formats and bench checks.
+The CE build currently defaults to UTC and has no physical UI button. Timezone
+conversion remains presentation-only and supports the inherited U.S. zones; see
+[timezone notes](docs/display-timezone.md). The selected Dad build will use a
+WS2812B 8×32 RGB matrix, but its driver is not implemented yet.
+See the [CE engineering baseline](docs/ce-engineering-baseline.md) for selected
+hardware, backend boundaries, and unverified items.
 
 ## Layout and architecture
 
-- `src/main.cpp`: cooperative GPS/PPS, button, display and USB diagnostic servicing.
-- `src/hardware.cpp` and `include/hardware.hpp`: UART and input initialization.
-- `src/pd2200.cpp` and `include/pd2200.hpp`: initial Noritake VFD bring-up.
+- `src/main.cpp`: cooperative GPS/PPS, compile-time-selected display and USB diagnostic servicing.
+- `src/hardware.cpp` and `include/hardware.hpp`: UART and PPS initialization.
+- `include/presentation_state.hpp`: coherent clock-derived snapshot supplied to display backends.
+- `include/display_backend.hpp`: compile-time backend selector; current selection is PD-2200.
+- `src/pd2200.cpp` and `include/pd2200.hpp`: PD-2200 Noritake-command encoding.
 - `include/pins.hpp`: single source of truth for the GPIO contract.
 - `include/clock_state.hpp`: authoritative UTC timebase, initially invalid and unlocked.
 - `src/display_time.cpp`: presentation-only civil time and contemporary U.S. DST.
-- `src/zone_button.cpp`: non-blocking debounced display-zone selection.
 - `lib/`: future reusable C++ components; `test/`: host regression tests.
 - `Paper-Documents/`: existing PDFs and paper/project documentation. Preserve
   this directory and its contents; it is not generated output or firmware data.
@@ -50,27 +51,18 @@ GPS RMC labels are associated with PPS edges by the UTC timebase. Canonical time
 stays UTC; local-time conversion belongs at the display boundary. See
 [timebase contract](docs/pps-timebase.md) for association and validity behavior.
 
-The reference physical build uses a Posiflex PD-2200 serial VFD, but that display
-is not fundamental to the clock architecture: the UTC timekeeping core is
-independent of it. The current VFD layer is hardware-specific and can be replaced
-or adapted for another serial/UART or embedded display; reproducing the project
-does not require finding the same Posiflex model.
+The current build selects the inherited Posiflex PD-2200 backend. The display
+architecture accepts a clock-derived presentation snapshot and does not require
+every backend to use pixels, RGB, or animation. A future backend supplies its
+own renderer/mapping and transport behind the compile-time selector. No
+WS2812, MAX7219, or TFT driver is implemented in Stage 1.
 
-The display module sends Posiflex PD-2200 commands in **Noritake mode**
-over UART1 through the MAX3232. Select Noritake mode and 9600 baud, 8N1 on the
-actual display. Startup waits 500 ms, sends reset (`ESC I`), waits 100 ms,
-disables the cursor (`16` hex), sets minimum brightness (`1B 4C 3F` hex),
-then clears (`0E` hex) and homes (`0C` hex). Direct cursor positioning
-(`ESC H`, zero-based cell address) precedes short initialized fields and changed
-characters. The display shows the selected zone, HH:MM:SS and PPS-synchronized
-rolling decade, with GPS/PPS/SAT on the lower row. No USB host is required.
-The companion [aac-time-bridge](https://github.com/rhaag71/aac-time-bridge) is an
-ESP32 network-time/NTP appliance that consumes the Pico's SPI protocol and
-qualified TIME_SYNC signal. The Pico remains the authoritative timekeeper and
-runs standalone without the ESP32. [Protocol v1](docs/clock-network-protocol.md)
-specifies the wiring, packet and phase-delay semantics, including the SPI reset
-and TX-priming lifecycle required for reliable byte alignment. Nothing received
-from the ESP32 can change Pico time.
+The PD-2200 operates in **Noritake serial command mode**, configured for 9600
+baud, 8N1. For the verified PD-2200, command `0x0E` clears displayed characters
+without resetting the current write/cursor position; `0x0C` homes separately.
+This PD-2200 behavior must not be generalized to other Noritake-compatible
+displays. Protocol encoding is distinct from the PD-2200-specific layout and
+workarounds, and from physical UART1/RS-232 transport through the MAX3232.
 
 ## Unattended recovery
 
@@ -79,10 +71,10 @@ without a feed. It is enabled at the start of setup (covering startup stalls too
 and fed only after all recurring main-loop services complete, never by an ISR or
 timer. This leaves ample margin over the 600 ms of VFD startup delays and UART
 drain; normal loop work is bounded. GPS/PPS loss, invalid UTC, display faults or
-backpressure, and an absent ESP32 do not intentionally cause resets.
+backpressure do not intentionally cause resets.
 
-Recovery follows normal startup: GPS/UTC validity, PPS lock and TIME_SYNC validity
-must be acquired again by the existing rules. Nothing preserves time quality
+Recovery follows normal startup: GPS/UTC validity and PPS lock must be acquired
+again by the existing rules. Nothing preserves time quality
 across reset. The SDK's RP2350-aware `watchdog_caused_reboot()` is sampled before
 enabling the watchdog. A watchdog boot queues `RESET: watchdog` on USB serial
 alongside existing diagnostics (subject to the existing bounded queue/host
@@ -104,10 +96,10 @@ debugger not to catch/hold reset or automatically re-halt the restarted target,
 then detach without issuing another reset so startup can run. Confirm a hardware
 reset about four seconds after the last feed, reconnect USB serial promptly to
 observe `RESET: watchdog`, and check the persistent 250 ms LED toggle interval.
-With GPS/PPS withheld, confirm invalid time/no qualified TIME_SYNC; restore them
+With GPS/PPS withheld, confirm invalid time; restore them
 and confirm normal reacquisition while the faster heartbeat persists. Finally
 power-cycle and check the normal 500 ms interval. Separately run with missing
-GPS/PPS, disconnected display, and absent ESP32 for longer than four seconds to
+GPS/PPS and disconnected display for longer than four seconds to
 check that degraded operation alone does not reset. Host tests cannot establish
 the physical reset behavior or exact timeout; record those on the bench.
 
@@ -146,19 +138,15 @@ input/output directions are relative to the Pico.
 | GP2 | GPS PPS input |
 | GP4 | PD-2200 UART1 TX (`Serial2`) via MAX3232 |
 | GP5 | UART1 RX, reserved and disabled |
-| GP6 | UI button input; pull-up, button to GND |
-| GP8 | SPI1 RX input / ESP32 MOSI -> Pico (header 11) |
-| GP9 | SPI1 CSn input from ESP32 (header 12) |
-| GP10 | SPI1 SCK input from ESP32 (header 14) |
-| GP11 | SPI1 TX output / Pico -> ESP32 MISO (header 15) |
-| GP12 | Qualified TIME_SYNC output (header 16) |
-| GP13 | Reserved future ESP32 control/IRQ |
-| GP14–GP22 | Open for future expansion |
+| GP6–GP7 | Unassigned |
+| GP8 | Proposed WS2812 data output; not implemented or physically tested |
+| GP9–GP22 | Unassigned |
 
-GP3 and GP7 are also unassigned. GP13 remains reserved and is not initialized. SPI1 uses native hardware, not PIO.
-Both UARTs currently use **9600 baud, 8N1**, explicit bring-up assumptions in
+GP3 is also unassigned. UART0 GPS and UART1 display currently use **9600 baud,
+8N1**, explicit bring-up assumptions in
 `src/main.cpp`; confirm them against the GPS configuration and VFD switches.
-USB `Serial` is separate from both hardware UARTs. The network interface works without a connected SPI controller.
+USB `Serial` is separate from both hardware UARTs. No Bridge, Wi-Fi, or
+physical UI button is used in the selected build.
 
 ## License
 

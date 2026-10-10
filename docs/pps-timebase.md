@@ -1,5 +1,11 @@
 # PPS UTC milestone
 
+> **Stage 1 CE scope:** GPS/PPS and civil-time behavior below remain the active
+> timebase reference. This document also retains some inherited AAC-era display
+> and SPI/TIME_SYNC discussion as historical context; AAC-Bridge/SPI/TIME_SYNC
+> is removed from active CE firmware. The former GP6 zone button is also removed
+> from the selected CE build. Current production CE defaults to UTC.
+
 ## Receiver contract and association
 
 This implementation assumes a **1 Hz navigation solution and rising-edge 1 PPS**
@@ -71,8 +77,8 @@ The authoritative clock state is UTC. The display converts that state to the
 selected civil zone (UTC, Eastern, Central, Mountain, or Pacific) at render
 time; the displayed three-letter abbreviation follows standard/daylight status.
 This presentation conversion does not feed back into the timebase. See
-[`display-timezone.md`](display-timezone.md) for the button and contemporary
-U.S. DST rules.
+[`display-timezone.md`](display-timezone.md) for inherited button history and
+contemporary U.S. DST rules; the selected CE build has no physical button.
 
 The digit after the decimal point is a visual
 progression indicator, **not part of UTC and not decimal tenths of UTC**. It is
@@ -112,8 +118,7 @@ Animation is read-only presentation code. It cannot advance/correct UTC, mutate
 the timebase, or change RMC/PPS association. There is no animation work in the
 ISR, no new delay, and no extra RMC/PPS parsing. A small supplemental GGA parser
 updates satellite status only; it cannot label or advance UTC. The main loop also
-services the bounded USB heartbeat, GPS/synchronization diagnostics, and
-low-volume network-interface diagnostics.
+services the bounded USB heartbeat and GPS/synchronization diagnostics.
 
 ## Final 20-column layout
 

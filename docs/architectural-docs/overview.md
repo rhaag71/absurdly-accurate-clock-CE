@@ -1,4 +1,10 @@
 # Absurdly Accurate Clock
+
+> **Scope note:** this document describes the inherited AAC architecture before
+> CE Stage 1, including its physical zone button and SPI/TIME_SYNC export. Those
+> button and Bridge interfaces have been removed from active CE firmware. Use
+> `ce-engineering-baseline.md` for current CE architecture; detailed network
+> passages below are retained as historical AAC reference.
 ## Pico / RP2350 technical architecture
 
 **First documentation pass · 25 September 2026**  

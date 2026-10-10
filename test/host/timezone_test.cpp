@@ -1,5 +1,4 @@
 #include "clock_vfd.hpp"
-#include "zone_button.hpp"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -56,34 +55,6 @@ void conversions() {
             }
         }
     }
-}
-void buttons() {
-    presentation::ZoneButton b;
-    b.begin(false,0); assert(b.zone()==DisplayZone::utc);
-    assert(!b.poll(false,30));
-    // Press bounce, exact threshold, long hold, release bounce.
-    assert(!b.poll(true,100)); assert(!b.poll(false,110));
-    assert(!b.poll(true,115)); assert(!b.poll(true,144));
-    assert(b.poll(true,145)); assert(b.zone()==DisplayZone::eastern);
-    for(unsigned t=146;t<10000;++t) assert(!b.poll(true,t));
-    assert(!b.poll(false,10000)); assert(!b.poll(true,10010));
-    assert(!b.poll(false,10020)); assert(!b.poll(false,10049));
-    assert(!b.poll(false,10050));
-    uint32_t now=10100;
-    for(const auto expected : {DisplayZone::central,DisplayZone::mountain,
-                              DisplayZone::pacific,DisplayZone::utc}) {
-        assert(!b.poll(true,now)); assert(b.poll(true,now+30));
-        assert(b.zone()==expected);
-        assert(!b.poll(false,now+100)); assert(!b.poll(false,now+130)); now+=200;
-    }
-    b.begin(true,0);
-    assert(!b.poll(true,10000)); assert(b.zone()==DisplayZone::utc);
-    assert(!b.poll(false,10001)); assert(!b.poll(false,10031));
-    assert(!b.poll(true,10032)); assert(b.poll(true,10062));
-    b.begin(false,UINT32_MAX-50);
-    assert(!b.poll(false,UINT32_MAX-20));
-    assert(!b.poll(true,UINT32_MAX-10)); assert(!b.poll(true,18));
-    assert(b.poll(true,19)); // 30 ms across wrap.
 }
 struct Screen : Print {
     clock_display::Frame frame;
@@ -194,6 +165,6 @@ void integration() {
     }
 }
 int main() {
-    conversions();buttons();integration();
-    puts("All timezone/DST/button/display integration tests passed");
+    conversions();integration();
+    puts("All timezone/DST/display integration tests passed");
 }

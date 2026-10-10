@@ -1,5 +1,12 @@
 # Display timezone and HH diagnostics
 
+> **Current CE status:** there is no GP6 button or `ZONE` record. The selected
+> zone currently defaults to UTC. HH and TXHH records are emitted by the
+> selected PD-2200 backend, in the compact formats documented below. The former
+> button behavior is retained here as historical implementation context.
+
+## Historical inherited zone-button behavior
+
 GP6 (physical pin 9) is an active-low button to GND using the RP2350 internal
 pull-up. No external pull-up is needed. Every boot selects UTC. Stable short
 presses cycle UTC → Eastern → Central → Mountain → Pacific → UTC. Selection is
@@ -30,19 +37,20 @@ this avoids falsely asserting a standard/daylight state before synchronization.
 
 ## USB diagnostics
 
-Existing GPS/PPS transition messages remain. New ASCII records end in CRLF:
+GPS/PPS transition messages remain in the common diagnostic queue. The PD-2200
+backend emits these best-effort ASCII display records directly to USB serial;
+records end in CRLF:
 
 ```text
-ZONE ms=<uptime_ms> zone=<UTC|Eastern|Central|Mountain|Pacific> drop=<count>
-HH ms=<uptime_ms> pps=<sequence> epoch=<UTC_unix_seconds> valid=<0|1> utc=<YYYY-MM-DDTHH:MM:SS> zone=<name> mode=<UTC|STD|DST|?> off=<signed_hours> civil=<YYYY-MM-DDTHH:MM:SS> want=<HH> cache=<HH> drop=<count>
-TXHH ms=<uptime_ms> pps=<sequence> kind=pair bytes=1B4807<tens_hex><ones_hex> want=<HH> cache=<HH> drop=<count>
+HH ms=<uptime_ms> pps=<sequence> valid=<0|1> utc=<HH:MM:SS> zone=<name> civil=<HH:MM:SS> want=<HH> cache=<HH>
+TXHH ms=<uptime_ms> pps=<sequence> kind=pair bytes=1B4807<tens_hex><ones_hex> want=<HH> cache=<HH>
 ```
 
-`ZONE` records an accepted button press. `HH` records the first frame and every
-change in desired HH or zone label (also every zone selection). It includes the
-cache **before** that loop's output service. Valid=0 makes the calendar/offset
-fields non-authoritative; mode=? and want=-- explicitly mark unavailable time.
-It does not log every second or rolling-indicator update.
+`HH` records the first rendered frame and changes in desired HH or zone label.
+Its cache is sampled before that service pass. When `valid=0`, the UTC/civil
+fields are not valid time. It does not log every second or rolling-indicator
+update. The removed `ZONE` record is intentionally retired with the physical
+zone-selection button.
 
 `TXHH` records completion of one contiguous HH pair accepted by UART, after
 updating both cache cells. For example, `bytes=1B48073030` means ESC H, address
@@ -55,26 +63,21 @@ partial cache values in HH records are expected. A canceled header-only command
 produces no TXHH record. These are firmware/UART observations, **not physical
 VFD readback**. See [HH accommodation](hh-zero-investigation.md#implemented-pd-2200-accommodation-contiguous-hh).
 
-Formatting and queueing occur in the main loop only on these events. The bounded
-USB queue is 1024 bytes and drains at most 64 bytes per loop, only when writable.
-Disconnected/full USB never causes a wait: whole records are dropped. `drop` is a
-cumulative counter of dropped diagnostic messages, included in subsequent new
-records; do not treat a capture with drops as a complete transmission history.
-No flash logging or periodic refresh is added. The paired-HH accommodation
-retains nonblocking retries; its effectiveness requires physical verification.
+Formatting occurs in the PD-2200 backend only on these events. It writes a whole
+record only when USB reports enough free space; otherwise that record is
+dropped without waiting. There is no display-diagnostic drop counter. These
+records are UART submission observations, not physical VFD readback. No flash
+logging or periodic refresh is added. The paired-HH accommodation retains
+nonblocking retries; its effectiveness requires physical verification.
 
-For the overnight run, capture USB serial at 115200 on the ThinkPad before the
-interesting hour transitions, and keep the connection open. Photograph any bad
-HH with a timestamp, retaining surrounding HH/TXHH/ZONE lines and drop counts.
+For a VFD diagnostic run, capture USB serial at 115200 across hour transitions.
 Correct desired/cached/accepted bytes still cannot exclude corruption downstream
 of the UART API; wire capture at the VFD input remains the next discriminator.
 
 ## Bench checks after a separate upload
 
-- Boot/reboot in UTC, including boot while holding the button.
-- Press once per zone; hold several seconds; release and press again; verify wrap.
+- Boot/reboot in UTC; the CE build has no physical zone button.
 - Confirm current standard/daylight abbreviations and previous-local-day hours.
-- Press during the rolling animation and near PPS: phase and status remain stable.
-- Check HH/TXHH on hour and zone changes; ordinary seconds produce no new records.
-- Disconnect/reconnect USB while running; clock/button must remain responsive.
+- Check HH/TXHH on hour changes; ordinary seconds produce no new records.
+- Disconnect/reconnect USB while running; time acquisition must remain responsive.
 - Preserve any impossible HH evidence rather than assuming this feature fixed it.

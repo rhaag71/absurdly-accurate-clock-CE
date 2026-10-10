@@ -39,24 +39,14 @@ measured evidence requires a change.
 
 ---
 
-## 2. MCU / Build Targets
+## 2. MCU / Build Target
 
-AAC-CE shall support Raspberry Pi Pico / RP2040.
+AAC-CE targets Raspberry Pi Pico 2 / RP2350 only. RP2350 is the selected
+hardware for Dad's clock and the sole current PlatformIO target. Do not add
+RP2040 compatibility layers, alternate toolchains, or build targets.
 
-The firmware should be made build-target aware rather than assuming
-RP2350 throughout the source.
-
-Desired architecture:
-
-    Common CE source
-        ├── RP2040 target
-        └── RP2350 target
-
-RP2040 is the initial CE hardware target.
-
-RP2350 support should remain possible where practical.
-
-Platform-specific code should be isolated from the clock engine.
+Platform-specific display transport and hardware support should remain outside
+the clock timing core.
 
 ---
 
@@ -80,13 +70,25 @@ The clock was previously LOCKED but GPS/PPS authority has subsequently
 been lost.
 
 During HOLDOVER, time continues advancing from the MCU's local timing
-source.
+source, using the RP2350's crystal-derived local timing. HOLDOVER is permitted
+for at most 24 hours from the last qualified GPS/PPS reference.
 
 The display must make HOLDOVER distinguishable from LOCKED without
 making the clock unusable.
 
 Reacquisition of GPS/PPS should automatically return the clock to
-LOCKED operation.
+LOCKED operation only after the existing GPS/PPS qualification rules succeed.
+
+At 24-hour expiration, estimated time becomes invalid and the clock enters
+UNSYNCED until qualified GPS/PPS returns. A reset or power interruption does
+not preserve holdover without additional hardware. Never represent estimated
+local timing as GPS/PPS-verified timing.
+
+The 24-hour limit is intended to be a compile-time configuration constant,
+defaulting to 24 hours for this build. Holdover accuracy depends on the Pico 2
+oscillator and operating conditions; no guaranteed accuracy may be claimed
+without measurement. The inherited AAC timing engine does not implement
+holdover.
 
 ---
 
@@ -96,7 +98,10 @@ UTC remains canonical internally.
 
 Civil-time conversion is a consumer policy/presentation function.
 
-The selected civil timezone shall persist across power cycles.
+Production personalization is selected at compile time. A physical UI button
+is not part of Dad's build. The selected production timezone has not yet been
+specified; the current Stage 1 firmware defaults to UTC. The existing civil
+conversion supports Eastern, Central, Mountain, Pacific, and UTC.
 
 Initial supported zones may reuse the existing AAC US timezone logic:
 
@@ -109,7 +114,8 @@ DST shall be derived from the configured civil timezone and date.
 
 Do not persist "EST" or "EDT" as a setting.
 
-Persist "US Eastern"; derive EST/EDT at runtime.
+If a timezone is selected in a build, represent the region and derive the active
+abbreviation (for example EST/EDT) at runtime.
 
 The active abbreviation should be available to the presentation layer.
 
@@ -122,30 +128,29 @@ CE shall support:
 - 12-hour civil time
 - 24-hour civil time
 
-The selected mode shall persist across power cycles.
+The production mode is a compile-time personalization choice; its selected
+default remains to be specified.
 
 Changing display format must not change canonical UTC.
 
 ---
 
-## 6. Persistent Consumer Settings
+## 6. Production Personalization and Development Builds
 
-At minimum, persist:
+Production personalization direction:
 
-- civil timezone
-- 12/24-hour mode
+- timezone and 12/24-hour format are build-time choices, not persistent user
+  settings in the selected design.
 
-Likely future persistent settings:
+Dedicated development builds will support simulated GPS/PPS input, display
+testing, diagnostics, animations, and theme demonstrations. The Stage 2
+simulated source must feed the same timing qualification engine as real GPS/PPS.
+Do not mix those development behaviors into production configuration by default.
+Compile-time profile/source infrastructure is a later stage and is not part
+of the Stage 1 implementation.
 
-- display brightness
-- automatic dimming preference
-- status-display preference
-
-Persistent configuration should be separated from authoritative
-timekeeping state.
-
-Authoritative UTC itself should not be restored from persistent storage
-and falsely treated as GPS-qualified after a cold boot.
+Authoritative UTC must never be restored from persistent storage and falsely
+treated as GPS-qualified after a cold boot.
 
 ---
 
@@ -161,55 +166,49 @@ or another layout appropriate to the selected hardware.
 
 Seconds may appear on the primary display, but are not required there.
 
-The primary display should remain visually simple.
+The primary display should remain visually legible. Dad's build uses one
+WS2812B 8×32 RGB panel (256 matrix pixels). The logical framebuffer must be
+independent of physical serpentine/order mapping.
 
 Display hardware is build-specific and replaceable.
 
-Possible technologies include:
-
-- large discrete LED
-- VFD
-- vintage donor display
-- other suitable display technology
+Dad's selected display is one WS2812B 8×32 RGB panel (256 matrix pixels). The
+inherited character VFD implementation remains available as an optional
+backend. Other display technologies may be added behind the same backend
+boundary.
 
 The selected physical display must not dictate the timing architecture.
 
 ---
 
-## 8. Secondary TFT Status Display
+## 8. Matrix, Status Pixels, and Visual Effects
 
-Current candidate:
+The WS2812B matrix is the selected primary display. Up to three optional
+additional WS2812 pixels may be chained after the matrix for status; their use
+and meanings are not fixed. WS2812 GP8 is proposed but not implemented or
+physically tested.
 
-2.25-inch ST7789 76x284 color TFT.
+Animation style is not fixed. Fades, dissolves, decays, color transitions, and
+rolling effects are candidates for early development-build testing. Fonts,
+overlays, calendar information, and special-day themes may be explored in
+development builds. Production effects, status hierarchy, and exact layouts
+remain to be specified and must preserve clear time-quality indication.
 
-The TFT may display:
+The provisional system power target is 5 V / 2 A. Verify actual panel current,
+brightness/current limits, thermal behavior, level shifting, and power margin
+by measurement. This target is not a measured result.
 
-- seconds
-- GPS status
-- PPS status
-- LOCK / HOLDOVER / UNSYNCED state
-- satellite count
-- EST / EDT or corresponding active timezone abbreviation
+One of the optional three additional chained pixels is designated for
+timing-quality indication: LOCKED, HOLDOVER, or UNSYNCED. Colors, fades, other
+effects, timing, and brightness remain display-development decisions. The
+status pixel shares the WS2812 serial chain and adds no Pico GPIO. It must never
+imply that live GPS PPS is present while showing HOLDOVER. No status-pixel code
+is implemented in Stage 1.
 
-Example:
-
-    56   GPS+  PPS+
-         LOCK   EDT
-         SAT 08
-
-Status colors should be intuitive and restrained.
-
-Suggested semantics:
-
-- green: good / locked
-- orange: holdover / degraded but useful
-- red: unavailable / unsynchronized / fault
-
-The TFT is intentionally secondary.
-
-A person across the room should primarily see the time.
-
-Detailed timing status should require approaching the clock.
+The selected electrical direction uses a 74HCT541 5 V level shifter and an
+approximately 330 Ω series resistor. Exact circuit/layout and panel operation
+remain subject to review and hardware verification. Dad's selected build has
+no physical UI button.
 
 ---
 
@@ -237,6 +236,51 @@ Display code must not:
 - decide whether the clock is locked
 - implement independent holdover timekeeping
 
+Backends are selected at compile time; no runtime plugin system is required.
+The shared backend contract consumes a coherent presentation snapshot and does
+not require all backends to support RGB framebuffers, individual pixels, or
+animations. Display-specific mapping, rendering/effects, and physical transport
+stay behind the selected backend. Stage 1 selects the inherited PD-2200 backend
+so the existing VFD build remains functional; no WS2812, MAX7219, or TFT driver
+is implemented in that stage. The inherited VFD operates in Noritake serial
+command mode. For the verified PD-2200, command `0x0E` clears displayed
+characters without resetting the cursor/write position; `0x0C` homes it. This
+behavior must not be assumed for other Noritake-capable displays. Command
+protocol, PD-2200-specific behavior, and the physical UART/RS-232 transport are
+separate layers.
+
+The backend architecture is intended to accommodate WS2812 RGB matrices,
+MAX7219 monochrome matrices and seven-segment displays, SPI TFT LCDs,
+character VFDs including the PD-2200, and other technologies added later. These
+are future backend targets, not Stage 1 drivers.
+
+### Future multi-display composition
+
+AAC-CE must accommodate future configurations with multiple heterogeneous
+display backends operating simultaneously. Different mechanisms may present
+different parts of the same clock presentation: for example, a robotic arm for
+hours, an LCD for minutes, an LED matrix for seconds, a VFD for date or other
+information, and independent status indicators for clock quality. These are
+possible configurations, not hardware selected for Dad's build.
+
+The authoritative GPS/PPS timing engine remains independent of every display.
+Multiple backends may consume the same coherent, read-only presentation state,
+with responsibilities assigned by each mechanism's capabilities and needs.
+Backends may have different update frequencies, refresh policies, response
+times, and hardware capabilities. Slow or electromechanical mechanisms must
+not block authoritative timekeeping or unrelated display operations; future
+backends may operate asynchronously where needed. The shared presentation
+model must not require every backend to support a framebuffer, pixels, RGB,
+characters, or instantaneous updates. Physical behavior and transport remain
+backend responsibilities, and display composition must never create another
+authoritative source of time.
+
+This is a future requirement, not current functionality. Stage 1 supports one
+compile-time-selected backend through `display_backend::Selected`, which
+remains correct for the current build. Multiple concurrent backends, display
+responsibility routing, scheduling, and asynchronous operations are not
+implemented. Dad's selected display remains one WS2812B 8×32 RGB panel.
+
 Display failure must not corrupt clock state.
 
 ---
@@ -251,7 +295,8 @@ Examples:
 - Once synchronized, temporary GPS loss should not make the clock stop
   displaying useful time.
 - GPS/PPS reacquisition should require no user intervention.
-- Configuration should survive power cycles.
+- Production personalization is compile-time; persistent consumer settings
+  are not part of the selected design.
 - Normal operation should require no network connection.
 - Technical status should be available without dominating the display.
 - The clock should normally require no routine maintenance or
@@ -263,7 +308,9 @@ Examples:
 
 Networking is NOT a CE requirement.
 
-The AAC Bridge / ESP32 subsystem is optional.
+Dad's selected build has no Wi-Fi or AAC-Bridge support. Stage 1 removes Bridge
+SPI, publisher/transport, TIME_SYNC, Bridge pin reservations, initialization,
+and active source dependencies from the CE repository.
 
 CE must function fully as:
 
@@ -293,13 +340,16 @@ normal GPS/PPS reacquisition.
 
 On a cold boot:
 
-1. Load persistent consumer configuration.
+1. Apply compile-time production personalization.
 2. Initialize displays and hardware.
 3. Begin GPS/PPS acquisition.
 4. Remain UNSYNCED until the existing qualification rules establish
    authoritative UTC.
 5. Enter LOCKED state.
-6. If authority is subsequently lost, enter HOLDOVER.
+6. HOLDOVER is required after loss of previously qualified authority, but is
+   limited to 24 hours from the last qualified reference, then expires to
+   UNSYNCED. It is not implemented in Stage 1. On return of GPS/PPS, repeat the
+   existing qualification before LOCKED.
 
 Do not manufacture apparently valid wall-clock time before first
 synchronization.

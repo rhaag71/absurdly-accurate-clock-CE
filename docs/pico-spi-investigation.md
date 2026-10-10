@@ -1,5 +1,10 @@
 # Pico SPI1 investigation: hardware sample and installed implementation
 
+> **Historical original AAC reference only:** this investigation records SPI and
+> TIME_SYNC implementation and hardware results from the original AAC firmware.
+> The AAC-Bridge interface was removed from AAC-CE; these source paths, pins,
+> transport behavior, and results are not active CE functionality.
+
 Current status: both the reset-storm lifecycle correction and separate TX
 first-byte alignment correction are hardware-verified. See [reset-storm evidence](#production-correction--reset-storm-hardware-verified-2026-09-27)
 and [final hardware acceptance](#final-hardware-acceptance--both-spi-failures-resolved).
