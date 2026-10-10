@@ -6,6 +6,22 @@ trap 'rm -rf "$test_dir"' EXIT HUP INT TERM
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/watchdog_test.cpp -o "$test_dir/watchdog"
 "$test_dir/watchdog"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_PRODUCTION \
+    -DAAC_DISPLAY_BACKEND_PD2200 -I include \
+    test/host/gps_source_selection_test.cpp -o "$test_dir/gps_source_production"
+"$test_dir/gps_source_production"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/pps_byte_association_test.cpp -o "$test_dir/pps_byte_association"
+"$test_dir/pps_byte_association"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    src/clock_state.cpp test/host/timebase_poll_order_test.cpp \
+    -o "$test_dir/timebase_poll_order"
+"$test_dir/timebase_poll_order"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
+    -DAAC_DISPLAY_BACKEND_PD2200 -I include \
+    src/nmea_rmc.cpp src/nmea_gga.cpp src/clock_state.cpp src/gps_input_simulated.cpp \
+    test/host/simulated_gps_test.cpp -o "$test_dir/simulated_gps"
+"$test_dir/simulated_gps"
 c++ -std=c++11 -Wall -Wextra -Werror -I test/host/stubs -I include \
     test/host/display_hardware_test.cpp -o "$test_dir/display_hardware"
 "$test_dir/display_hardware"

@@ -4,37 +4,32 @@
 #include <hardware/watchdog.h>
 #include "watchdog_policy.hpp"
 #include "clock_state.hpp"
+#include "monotonic_time.hpp"
 #include "ce_config.hpp"
+#include "gps_input_source.hpp"
 #include "display_backend.hpp"
 #include "presentation_state.hpp"
-#include "pins.hpp"
-#include "hardware.hpp"
 
 namespace {
 clock_model::Timebase timebase;
 nmea::RmcParser parser;
 nmea::GgaParser gga_parser;
-volatile uint32_t pps_count = 0;
-volatile uint32_t pps_at_us = 0;
-volatile bool pps_seen = false;
+gps_input::Selected input;
 uint32_t last_heartbeat_ms = 0;
 bool heartbeat_on = true;
 bool watchdog_boot = false; // Latched once in setup; never cleared on acquisition.
+uint32_t last_timebase_poll_us = 0;
+bool timebase_poll_seen = false;
 
-void onPpsRise() {
-    pps_at_us = micros();
-    ++pps_count;
-    pps_seen = true;
-}
-clock_model::Pulse snapshot(uint32_t& now_us) {
-    noInterrupts();
-    clock_model::Pulse pulse;
-    pulse.sequence = pps_count;
-    pulse.at_us = pps_at_us;
-    pulse.seen = pps_seen;
-    now_us = micros(); // Same snapshot: cannot precede the captured edge.
-    interrupts();
-    return pulse;
+void pollTimebase(const clock_model::Pulse& pulse, uint32_t candidate_us) {
+    if (!timebase_poll_seen) {
+        last_timebase_poll_us = candidate_us;
+        timebase_poll_seen = true;
+    } else {
+        last_timebase_poll_us = clock_model::nondecreasingTimestamp(
+            candidate_us, last_timebase_poll_us);
+    }
+    timebase.poll(pulse, last_timebase_poll_us);
 }
 
 // Bounded non-blocking diagnostic queue. Drop complete messages if a host
@@ -59,8 +54,8 @@ void diagnostic(const char* message) {
 void reportTransitions() {
     static bool gps = false, locked = false;
     const auto& state = timebase.state();
-    if (state.gps_valid && !gps) diagnostic("GPS UTC acquired\r\n");
-    if (!state.gps_valid && gps) diagnostic("GPS UTC lost\r\n");
+    if (state.gps_valid && !gps) diagnostic("RMC UTC data acquired\r\n");
+    if (!state.gps_valid && gps) diagnostic("RMC UTC data lost\r\n");
     if (state.pps_locked && !locked) {
         char message[96];
         snprintf(message, sizeof(message),
@@ -78,6 +73,14 @@ uint32_t last_service_us = 0;
 bool discard_rx = true; // Startup delays buffered bytes without arrival timestamps.
 clock_model::Reception reception;
 
+void discardInputAssociation() {
+    parser = nmea::RmcParser{};
+    gga_parser = nmea::GgaParser{};
+    input.abortPending();
+    timebase.discardAssociation();
+    discard_rx = input.startupDrainRequired();
+}
+
 }
 
 void setup() {
@@ -91,57 +94,60 @@ void setup() {
     last_heartbeat_ms = millis();
     Serial.begin(115200); // USB diagnostics; never wait for a connected host.
     if (watchdog_boot) diagnostic("RESET: watchdog\r\n");
-    // Retain GPS bytes arriving while display hardware initializes.
-    Serial1.setFIFOSize(1024);
-    hardware::begin(ce_config::gps_baud);
-    attachInterrupt(digitalPinToInterrupt(pins::gps_pps), onPpsRise, RISING);
+    input.begin();
     const presentation::State initial{
         timebase.state(), {}, micros(), ce_config::civil_timezone};
     display.begin(initial);
-    diagnostic("GPS/PPS UTC clock; RMC labels preceding PPS\r\n");
+    input.start(micros());
+    discard_rx = input.startupDrainRequired();
+    diagnostic(input.diagnosticLine());
+    diagnostic("UTC timebase; RMC labels preceding PPS\r\n");
     last_service_us = micros();
 
 }
 
 void loop() {
-    uint32_t now_us;
-    auto pulse = snapshot(now_us);
+    uint32_t now_us = micros();
+    input.poll(now_us);
+    auto pulse = input.snapshot(now_us);
     // A stalled main loop cannot safely timestamp already-buffered UART bytes.
     if (uint32_t(now_us - last_service_us) > 20000) {
-        discard_rx = true;
-        parser = nmea::RmcParser{};
-        gga_parser = nmea::GgaParser{};
-        timebase.discardAssociation();
+        discardInputAssociation();
+        reportTransitions();
+    }
+    if (input.takeDiscontinuity()) {
+        discardInputAssociation();
         reportTransitions();
     }
     last_service_us = now_us;
-    timebase.poll(pulse, now_us);
+    pollTimebase(pulse, now_us);
     timebase.satelliteStatus().poll(now_us);
     reportTransitions();
 
     // Bound work so incoming UART traffic cannot starve pulse/display handling.
-    for (unsigned i = 0; i < 64 && Serial1.available() > 0; ++i) {
-        const int received = Serial1.read();
-        if (received < 0) break;
+    for (unsigned i = 0; i < 64; ++i) {
+        gps_input::ByteEvent event;
+        if (!input.readByte(micros(), event)) break;
         if (discard_rx) continue;
-        pulse = snapshot(now_us);
-        timebase.poll(pulse, now_us);
+        now_us = event.timestamp_us;
+        pulse = event.pulse;
+        pollTimebase(pulse, now_us);
         reportTransitions();
-        if (received == '$') {
+        if (event.byte == '$') {
             reception.sequence = pulse.sequence;
             reception.start_us = now_us;
             reception.usable = pulse.seen;
         }
         nmea::Utc utc;
         char status = '?';
-        const auto result = parser.receive(static_cast<char>(received), utc, status);
+        const auto result = parser.receive(event.byte, utc, status);
         timebase.receive(result, utc, status, reception, now_us);
         uint8_t satellites = 0;
-        const auto gga_result = gga_parser.receive(static_cast<char>(received), satellites);
+        const auto gga_result = gga_parser.receive(event.byte, satellites);
         timebase.satelliteStatus().receive(gga_result, satellites, now_us);
         reportTransitions();
     }
-    if (discard_rx && Serial1.available() == 0) discard_rx = false;
+    if (discard_rx && !input.pending(micros())) discard_rx = false;
 
     for (unsigned i = 0; i < 64 && usb_used > 0; ++i) {
         if (!Serial || Serial.availableForWrite() <= 0 ||
@@ -157,8 +163,9 @@ void loop() {
     }
     // Refresh/poll the same pulse snapshot used for visual phase. Neither RMC
     // arrival nor an animation timer can advance the authoritative UTC timebase.
-    pulse = snapshot(now_us);
-    timebase.poll(pulse, now_us);
+    now_us = micros();
+    pulse = input.snapshot(now_us);
+    pollTimebase(pulse, now_us);
     timebase.satelliteStatus().poll(now_us);
     reportTransitions();
     const presentation::State shown{

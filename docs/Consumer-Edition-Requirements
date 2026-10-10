@@ -142,10 +142,10 @@ Production personalization direction:
 - timezone and 12/24-hour format are build-time choices, not persistent user
   settings in the selected design.
 
-Dedicated development builds will support simulated GPS/PPS input, display
-testing, diagnostics, animations, and theme demonstrations. The Stage 2
-simulated source must feed the same timing qualification engine as real GPS/PPS.
-Do not mix those development behaviors into production configuration by default.
+The development profile supports deterministic simulated GPS/PPS for bench
+development without attached GPS hardware. Simulated input must use the same
+parsers, reception association, qualification, and authoritative UTC state as
+real GPS/PPS. Do not mix development behavior into production by default.
 
 Stage 2A implements two compile-time PlatformIO profiles: `pico2` for
 production and `pico2-dev` for development. They use the same Pico 2 / RP2350
@@ -157,12 +157,27 @@ presentation defaults. Current configured behavior remains UTC and 24-hour
 time; birthday/holiday data and brightness/current limits are unset pending
 user-provided dates and hardware measurements.
 
-The development profile compiles without an attached GPS module. Until Stage
-2B adds the simulator, both profiles use the real GPS UART/PPS path; selecting
-development does not fabricate GPS lock or valid UTC. No synthetic NMEA/PPS
-source, USB test commands, simulated dates, or source switching is implemented
-in Stage 2A. The future simulator must feed the same parsers, association,
-qualification, and authoritative UTC state as the physical receiver.
+Production `pico2` selects only real UART0/PPS input; the simulator implementation
+and synthetic time settings are excluded from that profile. Development
+`pico2-dev` selects simulated input only and does not initialize GPS UART or
+register the physical PPS interrupt. It reports `GPS_SOURCE=SIMULATED`, while
+production reports `GPS_SOURCE=REAL`; source identity remains distinct from
+timebase qualification state.
+
+The development simulator starts after display initialization. Its first
+nominal PPS occurs one second later and carries the configured seed label
+2026-01-01 00:00:00 UTC. PPS repeats every 1,000,000 µs. The RMC begins 200 ms
+after its associated pulse and is delivered at the 9600-baud serial byte
+cadence, followed by valid GGA satellite data. These deterministic timestamps
+use the monotonic timer, not host wall time. Events more than 20 ms late are
+dropped and invalidate the current association rather than being replayed with
+fabricated past timestamps. The first seed label does not imply valid time:
+normal cadence, consecutive-label, and following-pulse qualification must still
+establish lock.
+
+Stage 2C remains future work: developer-facing console commands, fault
+injection, acquisition/recovery demonstrations, and calendar/theme test
+scenarios are not implemented.
 
 Authoritative UTC must never be restored from persistent storage and falsely
 treated as GPS-qualified after a cold boot.

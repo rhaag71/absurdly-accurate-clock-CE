@@ -70,15 +70,6 @@ struct AppearanceDefaults {
 // Limits remain unset until the display hardware and power budget are measured.
 constexpr AppearanceDefaults appearance = {Theme::default_theme, false, 0, false, 0};
 
-struct SimulatedGpsPpsDefaults {
-    bool enabled;
-    bool initial_utc_configured;
-    int64_t initial_utc_seconds;
-    uint32_t pps_period_us;
-    uint32_t rmc_after_pps_us;
-};
-constexpr SimulatedGpsPpsDefaults no_simulated_input = {false, false, 0, 0, 0};
-
 struct ProfileSettings {
     presentation::DisplayZone civil_timezone;
     DstRule dst_rule;
@@ -86,30 +77,42 @@ struct ProfileSettings {
     CalendarDates birthdays;
     CalendarDates holidays;
     AppearanceDefaults appearance;
-    SimulatedGpsPpsDefaults simulated_gps_pps;
 };
 
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+struct SimulatedGpsPpsDefaults {
+    bool enabled;
+    int64_t initial_utc_seconds;
+    uint32_t pps_period_us;
+    uint32_t rmc_start_after_pps_us;
+    uint32_t maximum_event_lateness_us;
+};
+constexpr SimulatedGpsPpsDefaults simulated_gps_pps = {
+    true, 1767225600LL, 1000000, 200000, 20000,
+};
 constexpr ProfileSettings production_settings = {
     presentation::DisplayZone::utc, DstRule::contemporary_us,
     HourFormat::twenty_four_hour, birthdays, holidays, appearance,
-    no_simulated_input,
 };
 constexpr ProfileSettings development_settings = {
     presentation::DisplayZone::utc, DstRule::contemporary_us,
     HourFormat::twenty_four_hour, birthdays, holidays, appearance,
-    no_simulated_input,
 };
-constexpr ProfileSettings active_settings =
-    build_profile == BuildProfile::production ? production_settings : development_settings;
+constexpr ProfileSettings active_settings = development_settings;
+constexpr bool development_profile_allows_simulated_input = true;
+constexpr bool simulated_input_implemented = true;
+#else
+constexpr ProfileSettings production_settings = {
+    presentation::DisplayZone::utc, DstRule::contemporary_us,
+    HourFormat::twenty_four_hour, birthdays, holidays, appearance,
+};
+constexpr ProfileSettings active_settings = production_settings;
+constexpr bool development_profile_allows_simulated_input = false;
+constexpr bool simulated_input_implemented = false;
+#endif
 constexpr presentation::DisplayZone civil_timezone = active_settings.civil_timezone;
 constexpr DstRule dst_rule = active_settings.dst_rule;
 constexpr HourFormat hour_format = active_settings.hour_format;
-
-// Stage 2B may add the simulator to development builds. No simulated source is
-// compiled or active in either profile in Stage 2A.
-constexpr bool development_profile_allows_simulated_input =
-    build_profile == BuildProfile::development;
-constexpr bool simulated_input_implemented = false;
 }
 
 #undef AAC_CE_SELECTED_PROFILE_PRODUCTION
