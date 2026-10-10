@@ -19,11 +19,11 @@ Every item below is explicitly classified as one of:
 - **Unverified / requires hardware testing** — evidence is insufficient to claim
   physical behavior; this may accompany a selected design or inherited code.
 
-The Stage 1 CE source now has a compile-time display-backend boundary, with the
-inherited PD-2200 backend selected for the existing build. The WS2812 backend
-and additional display backends are not implemented. The timebase remains the
-inherited AAC firmware; CE-specific behavior is limited to architecture and
-subsystem cleanup at this stage.
+The CE source has compile-time production and development profiles and a
+separate compile-time display-backend boundary. Both current profiles select
+the inherited PD-2200 backend. The WS2812 backend and additional display
+backends are not implemented. Both profiles use the inherited AAC timebase and
+real GPS/PPS input path; GPS simulation is not implemented.
 
 ## Repository evidence: current implementation
 
@@ -37,7 +37,8 @@ subsystem cleanup at this stage.
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
-| CE display, graphics, personalization, and enclosure direction | **Selected design / approved requirement** | The display boundary and PD-2200 backend are implemented in Stage 1. No LED framebuffer/backend, font/animation/theme system, compile-time profile infrastructure, or prototype light-well/enclosure implementation is included. |
+| Compile-time production/development profiles | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Profile selection is compile-time; neither profile implements simulated GPS/PPS or developer console commands. |
+| CE display, graphics, personalization, and enclosure direction | **Selected design / approved requirement** | The display boundary and PD-2200 backend are implemented in Stage 1. Compile-time profile selection and typed configuration defaults are implemented in Stage 2A. No LED framebuffer/backend, font/animation/theme system, or prototype light-well/enclosure implementation is included. |
 
 ## CE engineering decisions and requirements
 
@@ -60,7 +61,7 @@ The current source still determines what is implemented.
 | Logical framebuffer independent of physical LED ordering | **Selected design / approved requirement** | Application drawing coordinates should not encode panel-specific serpentine/order mapping. Physical mapping belongs in a replaceable backend/configuration layer. No such framebuffer exists yet. |
 | Develop display using simulated time before GPS integration | **Selected design / approved requirement** | Stage the display/presentation work against controllable simulated time before integrating the live inherited timebase. Not implemented. |
 | Fonts, animations, overlays, calendar, special-day themes | **Selected design / approved requirement** | Intended presentation capabilities. Exact content, schedule, rendering resource limits, and precedence are not specified by the repository and remain to be designed. |
-| Compile-time personalization and development source | **Selected design / approved requirement** | Production personalization uses compile-time configuration. Dedicated development builds will support simulated GPS/PPS input, display testing, diagnostics, animations, and theme demonstrations. Stage 2's simulator must feed the same timing qualification engine; none of this source/profile infrastructure is implemented here. |
+| Compile-time personalization and development source | **Selected design / approved requirement** | Compile-time profile selection and typed configuration defaults are implemented in Stage 2A. Production personalization uses compile-time configuration. The development profile is prepared for future simulated GPS/PPS input, display testing, diagnostics, animations, and theme demonstrations; simulator and developer commands are not implemented. Stage 2B's simulator must feed the same timing qualification engine. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After initial qualified GPS/PPS lock, local crystal-derived UTC may be estimated in HOLDOVER for at most 24 hours from the last qualified reference. Requalify through normal rules before LOCKED; expire to UNSYNCED at the limit. This is not implemented in inherited firmware, which invalidates UTC on reference loss. Accuracy is uncharacterized and is not GPS-verified. |
 | Conservative brightness and current limiting | **Selected design / approved requirement** | Display must constrain brightness/current for a household appliance. No CE brightness control, power budget, or current limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
 | Prototype light-well grid, diffuser, enclosure | **Proposed but not finalized** | Mechanical/optical development direction. Pitch, depth, divider geometry, diffuser, materials, ventilation, and enclosure dimensions are not specified or physically evaluated in this repository. |
@@ -69,6 +70,41 @@ The current source still determines what is implemented.
 | Animation style | **Proposed but not finalized** | Fades, dissolves, decays, color transitions, and rolling effects are candidates for early testing; no style is selected. |
 | USB serial diagnostics | **Selected design / approved requirement** | Preserve a service/debug path for GPS/time quality, watchdog and fault diagnosis. Inherited USB diagnostics exist; CE message set/rate and field accessibility are not finalized. |
 | Watchdog | **Selected design / approved requirement** | CE requires recovery from firmware stalls. Inherited RP2350 watchdog exists; the CE service boundary and physical recovery test must be confirmed on the target build. |
+
+## Stage 2A build profiles and configuration
+
+**Implemented specifically for CE:** `platformio.ini` defines `pico2`
+(production) and `pico2-dev` (development), both targeting the same Pico 2 /
+RP2350 board, Arduino-Pico framework, and dependency set. The selected display
+backend is a separate build definition from the profile; both current profiles
+select the inherited PD-2200 implementation.
+
+`include/ce_config.hpp` centralizes strongly typed compile-time settings for
+the selected profile and backend, GPS baud, civil timezone and DST rule,
+12/24-hour preference, calendar date lists, appearance/theme defaults, and
+future brightness/current-limit and simulated-input options. It provides
+separate production and development settings, selected by the build profile.
+Current behavior remains UTC and 24-hour presentation. Birthday and holiday
+lists are empty until user dates are supplied. Brightness/current limits and
+simulated input options remain unset; no user data or simulator behavior is
+invented.
+
+The development profile currently compiles the same real GPS UART/PPS input
+path and authoritative timebase. It compiles without a GPS module attached but
+will remain UNSYNCED without qualified input. No synthetic NMEA/PPS source,
+developer commands, simulated dates, or fabricated time authority exists in
+Stage 2A. Those capabilities are future Stage 2B/development work.
+
+**Stage 2B source boundary recommendation:** real receiver UART bytes currently
+enter through `Serial1` in `src/main.cpp`, where they feed the shared RMC/GGA
+parsers and `Timebase::receive`. Physical PPS is captured by `onPpsRise()` into
+the sequence/timestamp state returned by `snapshot()`, which is supplied to
+`Timebase::poll`. A simulator should inject synthetic sentence bytes and
+scheduled PPS events at these input edges, then use the same parsers,
+`Reception` association, `Pulse` snapshots, qualification, and authoritative
+`Timebase`. Keep source identity available to diagnostics so simulated lock is
+distinguishable from physically qualified GPS. Any later source switch must
+discard qualification and reacquire. Stage 2A does not refactor these paths.
 
 ## Display backend and PD-2200 boundaries
 

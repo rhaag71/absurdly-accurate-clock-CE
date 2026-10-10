@@ -4,14 +4,13 @@
 #include <hardware/watchdog.h>
 #include "watchdog_policy.hpp"
 #include "clock_state.hpp"
+#include "ce_config.hpp"
 #include "display_backend.hpp"
 #include "presentation_state.hpp"
 #include "pins.hpp"
 #include "hardware.hpp"
 
 namespace {
-constexpr unsigned long gps_baud = 9600; // Confirm against the GPS configuration.
-constexpr auto selected_zone = presentation::DisplayZone::utc;
 clock_model::Timebase timebase;
 nmea::RmcParser parser;
 nmea::GgaParser gga_parser;
@@ -94,9 +93,10 @@ void setup() {
     if (watchdog_boot) diagnostic("RESET: watchdog\r\n");
     // Retain GPS bytes arriving while display hardware initializes.
     Serial1.setFIFOSize(1024);
-    hardware::begin(gps_baud);
+    hardware::begin(ce_config::gps_baud);
     attachInterrupt(digitalPinToInterrupt(pins::gps_pps), onPpsRise, RISING);
-    const presentation::State initial{timebase.state(), {}, micros(), selected_zone};
+    const presentation::State initial{
+        timebase.state(), {}, micros(), ce_config::civil_timezone};
     display.begin(initial);
     diagnostic("GPS/PPS UTC clock; RMC labels preceding PPS\r\n");
     last_service_us = micros();
@@ -161,7 +161,8 @@ void loop() {
     timebase.poll(pulse, now_us);
     timebase.satelliteStatus().poll(now_us);
     reportTransitions();
-    const presentation::State shown{timebase.state(), pulse, now_us, selected_zone};
+    const presentation::State shown{
+        timebase.state(), pulse, now_us, ce_config::civil_timezone};
     display.service(shown);
     // Sole recurring feed: all main-loop services completed. Degraded inputs,
     // absent peers and display backpressure are valid states, not reset reasons.
