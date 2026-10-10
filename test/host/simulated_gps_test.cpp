@@ -3,6 +3,7 @@
 #include <type_traits>
 #include "ce_config.hpp"
 #include "gps_input_source.hpp"
+#include "monotonic_time.hpp"
 
 static_assert(std::is_same<gps_input::Selected, gps_input::SimulatedSource>::value,
               "Development uses the simulated source");
@@ -153,6 +154,92 @@ void delayedEventsAreNotReplayed() {
     assert(pulse.sequence == 2 && pulse.at_us == 3000000);
 }
 
+void simulatorReseedClearsAuthorityAndReacquires() {
+    gps_input::Selected source;
+    clock_model::Timebase timebase;
+    nmea::RmcParser rmc;
+    nmea::GgaParser gga;
+    clock_model::Reception reception;
+    uint32_t last_poll = 0;
+    bool poll_seen = false;
+    unsigned rmc_count = 0;
+    int64_t first_label = 0;
+
+    const auto run = [&](uint32_t begin_us, uint32_t end_us) {
+        for (uint32_t now = begin_us; now < end_us; now += 500) {
+            source.poll(now);
+            uint32_t sampled = now;
+            auto pulse = source.snapshot(sampled);
+            if (!poll_seen) {
+                last_poll = now;
+                poll_seen = true;
+            } else {
+                last_poll = clock_model::nondecreasingTimestamp(now, last_poll);
+            }
+            timebase.poll(pulse, last_poll);
+            for (;;) {
+                gps_input::ByteEvent event;
+                if (!source.readByte(now, event)) break;
+                const uint32_t byte_poll = clock_model::nondecreasingTimestamp(
+                    event.timestamp_us, last_poll);
+                last_poll = byte_poll;
+                timebase.poll(event.pulse, byte_poll);
+                if (event.byte == '$') {
+                    reception.sequence = event.pulse.sequence;
+                    reception.start_us = event.timestamp_us;
+                    reception.usable = event.pulse.seen;
+                }
+                nmea::Utc utc;
+                char status = '?';
+                const auto result = rmc.receive(event.byte, utc, status);
+                if (result == nmea::Result::valid_rmc) {
+                    if (rmc_count == 0) first_label = clock_model::toUnix(utc);
+                    ++rmc_count;
+                }
+                timebase.receive(result, utc, status, reception, event.timestamp_us);
+                uint8_t satellites = 0;
+                const auto gga_result = gga.receive(event.byte, satellites);
+                timebase.satelliteStatus().receive(gga_result, satellites,
+                                                   event.timestamp_us);
+            }
+        }
+    };
+
+    constexpr int64_t initial = 1767225600LL;
+    constexpr int64_t reseed = 1798187400LL; // 2026-12-25 08:30:00 UTC.
+    source.startAt(0, initial);
+    run(0, 6500000);
+    assert(timebase.state().gps_valid && timebase.state().pps_locked &&
+           timebase.state().utc_valid);
+    const int64_t old_authority = timebase.state().utc_seconds;
+
+    // Mirror the explicit development reset path: replace the complete
+    // Timebase, parser/association state and simulator schedule.
+    timebase = clock_model::Timebase{};
+    rmc = nmea::RmcParser{};
+    gga = nmea::GgaParser{};
+    reception = {};
+    source.abortPending();
+    source.startAt(7000000, reseed);
+    last_poll = 0;
+    poll_seen = false;
+    rmc_count = 0;
+    assert(!timebase.state().gps_valid && !timebase.state().pps_present &&
+           !timebase.state().pps_locked && !timebase.state().utc_valid);
+    uint32_t sampled = 7000000;
+    const auto reset_pulse = source.snapshot(sampled);
+    assert(!reset_pulse.seen && reset_pulse.sequence == 0);
+    assert(!source.receiverUtcValid());
+
+    run(7000000, 13500000);
+    assert(rmc_count >= 5);
+    assert(first_label == reseed);
+    assert(timebase.state().gps_valid && timebase.state().pps_locked &&
+           timebase.state().utc_valid);
+    assert(clock_model::toUnix(timebase.state().utc) == reseed + 5);
+    assert(clock_model::toUnix(timebase.state().utc) != old_authority);
+}
+
 void monotonicRolloverIsHandled() {
     gps_input::Selected source;
     const uint32_t start = UINT32_MAX - 500000;
@@ -190,5 +277,6 @@ void monotonicRolloverIsHandled() {
 int main() {
     acquisitionUsesSharedPipeline();
     delayedEventsAreNotReplayed();
+    simulatorReseedClearsAuthorityAndReacquires();
     monotonicRolloverIsHandled();
 }

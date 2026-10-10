@@ -175,9 +175,40 @@ fabricated past timestamps. The first seed label does not imply valid time:
 normal cadence, consecutive-label, and following-pulse qualification must still
 establish lock.
 
-Stage 2C remains future work: developer-facing console commands, fault
-injection, acquisition/recovery demonstrations, and calendar/theme test
-scenarios are not implemented.
+### Development USB monitor and console
+
+Implemented in Stage 2C.1 for `pico2-dev` only. The development firmware boots
+in Monitor Mode and streams asynchronous diagnostics. Press Enter to enter
+Console Mode and receive the `aac>` prompt. Console input is echoed and accepts
+backspace/delete, CR, LF, and CRLF. The available commands are:
+
+- `help` — list commands and syntax.
+- `status` — inspect source, qualification flags, valid authoritative UTC,
+  simulated receiver label, PPS/RMC details, satellite status, and dropped
+  diagnostic/response byte counts.
+- `time YYYY-MM-DD HH:MM:SS` — restart the simulated receiver at the supplied
+  UTC value. Valid years are 2000–2099, matching the existing RMC parser.
+- `reset` — restart at the configured default seed, currently
+  2026-01-01 00:00:00 UTC.
+- `exit` — return to Monitor Mode.
+
+`time` and `reset` clear the existing Timebase instance, parsers, pending
+sentences, PPS sequence, and poll timestamp tracking. They restart synthetic
+input and require normal RMC/PPS qualification before authoritative UTC is
+valid again. They do not directly set authoritative time or qualification
+flags.
+
+While in Console Mode, diagnostic events continue to be generated but
+unsolicited output is suppressed. Diagnostic history is bounded to 1024 bytes;
+command responses have a separate bounded 512-byte queue and priority. Queued
+diagnostics are discarded on mode transitions, so exiting does not dump old
+records. A slow or disconnected USB terminal cannot block clock servicing.
+The development console implementation is excluded from production `pico2`,
+which retains asynchronous diagnostics only. Host tests pass; physical Pico 2
+terminal behavior requires on-device verification.
+
+Stage 2C.2 remains future work: fault injection, acquisition/recovery
+demonstrations, and calendar/theme test scenarios are not implemented.
 
 Authoritative UTC must never be restored from persistent storage and falsely
 treated as GPS-qualified after a cold boot.

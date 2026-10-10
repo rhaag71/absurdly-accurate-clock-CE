@@ -17,6 +17,10 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
     src/clock_state.cpp test/host/timebase_poll_order_test.cpp \
     -o "$test_dir/timebase_poll_order"
 "$test_dir/timebase_poll_order"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    src/dev_console.cpp src/clock_state.cpp \
+    test/host/dev_console_test.cpp -o "$test_dir/dev_console"
+"$test_dir/dev_console"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     -DAAC_DISPLAY_BACKEND_PD2200 -I include \
     src/nmea_rmc.cpp src/nmea_gga.cpp src/clock_state.cpp src/gps_input_simulated.cpp \

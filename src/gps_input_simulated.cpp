@@ -26,10 +26,16 @@ bool SimulatedSource::due(uint32_t now_us, uint32_t deadline_us) const {
 }
 
 void SimulatedSource::start(uint32_t now_us) {
+    startAt(now_us, ce_config::simulated_gps_pps.initial_utc_seconds);
+}
+
+void SimulatedSource::startAt(uint32_t now_us, int64_t initial_utc_seconds) {
     pulse_ = {};
+    stream_pulse_ = {};
     stream_length_ = rmc_length_ = stream_offset_ = 0;
     discontinuity_ = false;
-    next_utc_seconds_ = ce_config::simulated_gps_pps.initial_utc_seconds;
+    receiver_utc_valid_ = false;
+    next_utc_seconds_ = initial_utc_seconds;
     next_pps_us_ = now_us + ce_config::simulated_gps_pps.pps_period_us;
     started_ = ce_config::simulated_gps_pps.enabled;
 }
@@ -76,6 +82,8 @@ void SimulatedSource::buildCycle() {
 
     stream_start_us_ = pulse_.at_us + ce_config::simulated_gps_pps.rmc_start_after_pps_us;
     stream_pulse_ = pulse_;
+    last_receiver_utc_seconds_ = next_utc_seconds_;
+    receiver_utc_valid_ = true;
     const uint32_t rmc_wire_time = static_cast<uint32_t>(
         (static_cast<uint64_t>(rmc_length_) * bits_per_second) / ce_config::gps_baud);
     gga_start_us_ = stream_start_us_ + rmc_wire_time + inter_sentence_gap_us;

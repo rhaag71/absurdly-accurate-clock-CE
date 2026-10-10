@@ -9,6 +9,9 @@
 #include "gps_input_source.hpp"
 #include "display_backend.hpp"
 #include "presentation_state.hpp"
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+#include "dev_console.hpp"
+#endif
 
 namespace {
 clock_model::Timebase timebase;
@@ -20,6 +23,9 @@ bool heartbeat_on = true;
 bool watchdog_boot = false; // Latched once in setup; never cleared on acquisition.
 uint32_t last_timebase_poll_us = 0;
 bool timebase_poll_seen = false;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+dev_console::Console development_console;
+#endif
 
 void pollTimebase(const clock_model::Pulse& pulse, uint32_t candidate_us) {
     if (!timebase_poll_seen) {
@@ -32,8 +38,8 @@ void pollTimebase(const clock_model::Pulse& pulse, uint32_t candidate_us) {
     timebase.poll(pulse, last_timebase_poll_us);
 }
 
-// Bounded non-blocking diagnostic queue. Drop complete messages if a host
-// remains disconnected through too many transitions; never stall GPS reception.
+// Production monitor keeps the inherited bounded asynchronous output queue.
+#if defined(AAC_BUILD_PROFILE_PRODUCTION)
 char usb_queue[1024];
 uint32_t diagnostic_drops = 0;
 size_t usb_head = 0, usb_tail = 0, usb_used = 0;
@@ -46,10 +52,21 @@ void queueDiagnostic(const char* message) {
     }
     usb_used += length;
 }
+#endif
 void diagnostic(const char* message) {
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    development_console.queueDiagnostic(message);
+#else
     queueDiagnostic(message);
+#endif
     static appliance::WatchdogDiagnostic reset_report;
-    if (reset_report.next(watchdog_boot)) queueDiagnostic("RESET=WATCHDOG\r\n");
+    if (reset_report.next(watchdog_boot)) {
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        development_console.queueDiagnostic("RESET=WATCHDOG\r\n");
+#else
+        queueDiagnostic("RESET=WATCHDOG\r\n");
+#endif
+    }
 }
 void reportTransitions() {
     static bool gps = false, locked = false;
@@ -72,6 +89,94 @@ display_backend::Selected display;
 uint32_t last_service_us = 0;
 bool discard_rx = true; // Startup delays buffered bytes without arrival timestamps.
 clock_model::Reception reception;
+
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+void restartSimulator(int64_t utc_seconds) {
+    input.abortPending();
+    timebase = clock_model::Timebase{};
+    parser = nmea::RmcParser{};
+    gga_parser = nmea::GgaParser{};
+    reception = {};
+    discard_rx = false;
+    input.startAt(micros(), utc_seconds);
+    last_timebase_poll_us = 0;
+    timebase_poll_seen = false;
+}
+
+void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
+                    dev_console::Console& console) {
+    if (command == dev_console::Command::set_time) {
+        restartSimulator(utc_seconds);
+        const auto utc = clock_model::fromUnix(utc_seconds);
+        char line[80];
+        snprintf(line, sizeof(line),
+                 "Simulator restarting at %04u-%02u-%02u %02u:%02u:%02u UTC",
+                 utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second);
+        console.writeLine(line);
+    } else if (command == dev_console::Command::reset) {
+        restartSimulator(ce_config::simulated_gps_pps.initial_utc_seconds);
+        console.writeLine("Simulator reset; reacquiring UTC");
+    } else if (command == dev_console::Command::status) {
+        const auto& state = timebase.state();
+        uint32_t sampled_us = micros();
+        const auto pulse = input.snapshot(sampled_us);
+        console.writeLine("Input source: SIMULATED");
+        if (state.utc_valid) {
+            char line[80];
+            snprintf(line, sizeof(line), "Authoritative UTC: %04u-%02u-%02u %02u:%02u:%02u UTC",
+                     state.utc.year, state.utc.month, state.utc.day,
+                     state.utc.hour, state.utc.minute, state.utc.second);
+            console.writeLine(line);
+            console.writeLine("Timing: LOCKED by simulated input qualification");
+        } else {
+            console.writeLine("Authoritative UTC: INVALID / UNSYNCED");
+            console.writeLine(state.pps_present || state.gps_valid
+                ? "Timing: ACQUIRING (simulated input)"
+                : "Timing: UNSYNCED");
+        }
+        char line[96];
+        snprintf(line, sizeof(line),
+                 "gps_valid=%u pps_present=%u pps_locked=%u utc_valid=%u",
+                 state.gps_valid, state.pps_present, state.pps_locked, state.utc_valid);
+        console.writeLine(line);
+        snprintf(line, sizeof(line), "PPS sequence: %lu",
+                 static_cast<unsigned long>(pulse.sequence));
+        console.writeLine(line);
+        snprintf(line, sizeof(line), "RMC status=%c completion phase=%lu us",
+                 state.rmc_status, static_cast<unsigned long>(state.rmc_phase_us));
+        console.writeLine(line);
+        if (state.satellites.valid) {
+            snprintf(line, sizeof(line), "Satellites used: %u", state.satellites.used);
+            console.writeLine(line);
+        } else {
+            console.writeLine("Satellite status: unavailable");
+        }
+        if (input.receiverUtcValid()) {
+            const auto receiver_utc = clock_model::fromUnix(input.receiverUtcSeconds());
+            snprintf(line, sizeof(line), "Synthetic receiver label: %04u-%02u-%02u %02u:%02u:%02u UTC",
+                     receiver_utc.year, receiver_utc.month, receiver_utc.day,
+                     receiver_utc.hour, receiver_utc.minute, receiver_utc.second);
+            console.writeLine(line);
+        } else {
+            console.writeLine("Synthetic receiver label: waiting for first PPS");
+        }
+        snprintf(line, sizeof(line), "Diagnostic bytes dropped: %lu",
+                 static_cast<unsigned long>(development_console.diagnosticBytesDropped()));
+        console.writeLine(line);
+        snprintf(line, sizeof(line), "Console response bytes dropped: %lu",
+                 static_cast<unsigned long>(development_console.responseBytesDropped()));
+        console.writeLine(line);
+    }
+}
+
+void serviceConsoleInput() {
+    for (unsigned i = 0; i < 32 && Serial.available() > 0; ++i) {
+        const int received = Serial.read();
+        if (received < 0) break;
+        development_console.receive(static_cast<char>(received), consoleCommand, nullptr);
+    }
+}
+#endif
 
 void discardInputAssociation() {
     parser = nmea::RmcParser{};
@@ -149,12 +254,22 @@ void loop() {
     }
     if (discard_rx && !input.pending(micros())) discard_rx = false;
 
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    serviceConsoleInput();
+    for (unsigned i = 0; i < 64; ++i) {
+        if (!Serial || Serial.availableForWrite() <= 0) break;
+        char byte;
+        if (!development_console.nextOutput(byte) ||
+            Serial.write(static_cast<uint8_t>(byte)) != 1) break;
+    }
+#else
     for (unsigned i = 0; i < 64 && usb_used > 0; ++i) {
         if (!Serial || Serial.availableForWrite() <= 0 ||
             Serial.write(static_cast<uint8_t>(usb_queue[usb_tail])) != 1) break;
         usb_tail = (usb_tail + 1) % sizeof(usb_queue);
         --usb_used;
     }
+#endif
     const uint32_t now = millis();
     if (appliance::heartbeat_due(now, last_heartbeat_ms, watchdog_boot)) {
         last_heartbeat_ms = now;

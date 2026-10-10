@@ -37,7 +37,7 @@ WS2812 backend and additional display backends are not implemented.
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
-| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Production compiles the real UART/PPS source; development compiles the simulated source. Stage 2C console controls and fault injection are not implemented. |
+| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Production compiles the real UART/PPS source; development compiles the simulated source and USB console. Stage 2C.2 fault injection is not implemented. |
 | CE display, graphics, personalization, and enclosure direction | **Selected design / approved requirement** | The display boundary and PD-2200 backend are implemented in Stage 1. Compile-time profile selection and typed configuration defaults are implemented in Stage 2A. No LED framebuffer/backend, font/animation/theme system, or prototype light-well/enclosure implementation is included. |
 
 ## CE engineering decisions and requirements
@@ -120,9 +120,33 @@ Simulation uses `micros()`-derived monotonic scheduling. If a PPS or serial
 event is over 20 ms late, the simulator drops pending data, marks an input
 discontinuity, and does not replay an edge with a backdated timestamp. The
 shared qualification engine remains responsible for accepting or rejecting
-subsequent association and cadence. Stage 2C console controls, fault injection,
-acquisition/recovery demonstrations, and calendar/theme scenarios remain
-future work.
+subsequent association and cadence. Stage 2C.1 adds a development-only USB
+monitor/console described below. Stage 2C.2 fault injection, acquisition and
+recovery demonstrations, and calendar/theme scenarios remain future work.
+
+## Development USB monitor and console
+
+**Implemented specifically for CE:** `pico2-dev` starts in Monitor Mode, where
+asynchronous USB diagnostic records stream. Press Enter to switch to Console
+Mode. The console prints a line boundary and `aac>` prompt, echoes input, and
+supports backspace/delete, CR, LF, and CRLF. It has a fixed 79-character
+command limit and rejects overlong lines. Commands are `help`, `status`,
+`time YYYY-MM-DD HH:MM:SS`, `reset`, and `exit`. The `time` value is UTC and
+supports years 2000–2099, matching the RMC parser's two-digit-year mapping.
+`reset` uses the configured development seed (2026-01-01 00:00:00 UTC); both
+reset and `time` restart simulated PPS/RMC/GGA input and require ordinary
+timebase reacquisition.
+
+In Console Mode, diagnostics continue to be generated and retained in a
+bounded 1024-byte queue, but are not written asynchronously. Command responses
+have a separate bounded 512-byte queue and take output priority. Entering or
+leaving the console discards queued diagnostic bytes rather than mixing them
+with command entry or replaying a backlog. Dropped diagnostic and response
+bytes are reported by `status`. Input and output service are nonblocking and
+bounded per main-loop iteration. The console source is excluded from the
+production `pico2` build; production retains its existing bounded diagnostic
+queue and has no development commands. Host tests cover console behavior and
+simulator reseeding; physical USB terminal behavior remains unverified here.
 
 ## Display backend and PD-2200 boundaries
 
@@ -203,8 +227,9 @@ transport boundary from verified target documentation/tests.
   measured verification. Do not treat the target as measured consumption.
 - Compile-time personalization is the production direction. `pico2-dev`
   provides simulated GPS/PPS input through the shared timing qualification
-  engine. Stage 2C console commands, fault injection, animation/theme
-  demonstrations, and calendar scenarios remain future work.
+  engine and the development-only USB monitor/console. Stage 2C.2 fault
+  injection, animation/theme demonstrations, and calendar scenarios remain
+  future work.
 - No physical UI button is in the selected Dad build. The current firmware
   defaults its selected display zone to UTC; the civil-time conversion library
   still supports all inherited U.S. zones.
