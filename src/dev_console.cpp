@@ -3,9 +3,14 @@
 #include <cstdio>
 #include <cstring>
 #include "clock_state.hpp"
+#include "gps_input_simulated.hpp"
 
 namespace dev_console {
 namespace {
+constexpr const char* fault_usage =
+    "Usage: fault status | gps {on|off} | pps {on|off} | "
+    "rmc {normal|bad-checksum|early|late} | clear";
+
 bool whitespace(char c) { return c == ' ' || c == '\t'; }
 bool digit(char c) { return c >= '0' && c <= '9'; }
 unsigned pair(const char* value) {
@@ -80,6 +85,25 @@ void Console::writeLine(const char* text) {
     write("\r\n");
 }
 
+void writeFaultStatus(const gps_input::FaultControls& faults, Console& console) {
+    console.writeLine(faults.gps_messages ? "GPS messages : ON" : "GPS messages : OFF");
+    console.writeLine(faults.pps_output ? "PPS output   : ON" : "PPS output   : OFF");
+    switch (faults.rmc_mode) {
+    case gps_input::RmcMode::normal:
+        console.writeLine("RMC mode     : NORMAL");
+        break;
+    case gps_input::RmcMode::bad_checksum:
+        console.writeLine("RMC mode     : BAD-CHECKSUM");
+        break;
+    case gps_input::RmcMode::early:
+        console.writeLine("RMC mode     : EARLY (5 ms after PPS)");
+        break;
+    case gps_input::RmcMode::late:
+        console.writeLine("RMC mode     : LATE (880 ms after PPS)");
+        break;
+    }
+}
+
 void Console::prompt() { write("aac> "); }
 
 void Console::enterConsole() {
@@ -152,6 +176,8 @@ void Console::execute(CommandHandler handler, void* context) {
             write("time       Set simulated UTC\r\n");
             write("           time YYYY-MM-DD HH:MM:SS\r\n");
             write("reset      Reset simulator to configured UTC seed\r\n");
+            write("fault      Inspect or change simulated GPS/PPS faults\r\n");
+            writeLine("           fault status | gps {on|off} | pps {on|off} | rmc {normal|bad-checksum|early|late} | clear");
             writeLine("exit       Return to diagnostic monitor");
         } else if (std::strcmp(begin, "status") == 0 && !*args) {
             if (handler) handler(context, Command::status, 0, *this);
@@ -166,11 +192,55 @@ void Console::execute(CommandHandler handler, void* context) {
             }
         } else if (std::strcmp(begin, "exit") == 0 && !*args) {
             returnToMonitor();
+        } else if (std::strcmp(begin, "fault") == 0) {
+            if (std::strcmp(args, "status") == 0 && !*second) {
+                if (handler) handler(context, Command::fault_status, 0, *this);
+            } else if (std::strcmp(args, "clear") == 0 && !*second) {
+                if (handler) handler(context, Command::fault_clear, 0, *this);
+            } else {
+                char* value = second;
+                while (whitespace(*value)) ++value;
+                char* end_value = value;
+                while (*end_value && !whitespace(*end_value)) ++end_value;
+                if (*end_value) *end_value++ = '\0';
+                while (whitespace(*end_value)) ++end_value;
+                if (!*value || *end_value) {
+                    writeLine(fault_usage);
+                } else if (std::strcmp(args, "gps") == 0 &&
+                           std::strcmp(value, "off") == 0) {
+                    if (handler) handler(context, Command::gps_off, 0, *this);
+                } else if (std::strcmp(args, "gps") == 0 &&
+                           std::strcmp(value, "on") == 0) {
+                    if (handler) handler(context, Command::gps_on, 0, *this);
+                } else if (std::strcmp(args, "pps") == 0 &&
+                           std::strcmp(value, "off") == 0) {
+                    if (handler) handler(context, Command::pps_off, 0, *this);
+                } else if (std::strcmp(args, "pps") == 0 &&
+                           std::strcmp(value, "on") == 0) {
+                    if (handler) handler(context, Command::pps_on, 0, *this);
+                } else if (std::strcmp(args, "rmc") == 0 &&
+                           std::strcmp(value, "bad-checksum") == 0) {
+                    if (handler) handler(context, Command::rmc_bad_checksum, 0, *this);
+                } else if (std::strcmp(args, "rmc") == 0 &&
+                           std::strcmp(value, "early") == 0) {
+                    if (handler) handler(context, Command::rmc_early, 0, *this);
+                } else if (std::strcmp(args, "rmc") == 0 &&
+                           std::strcmp(value, "late") == 0) {
+                    if (handler) handler(context, Command::rmc_late, 0, *this);
+                } else if (std::strcmp(args, "rmc") == 0 &&
+                           std::strcmp(value, "normal") == 0) {
+                    if (handler) handler(context, Command::rmc_normal, 0, *this);
+                } else {
+                    writeLine(fault_usage);
+                }
+            }
         } else if (std::strcmp(begin, "help") == 0 ||
                    std::strcmp(begin, "status") == 0 ||
                    std::strcmp(begin, "reset") == 0 ||
                    std::strcmp(begin, "exit") == 0) {
             writeLine("Error: unexpected arguments");
+        } else if (std::strcmp(begin, "fault") == 0) {
+            writeLine(fault_usage);
         } else {
             write("Error: unknown command '");
             write(begin);

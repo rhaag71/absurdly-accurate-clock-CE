@@ -37,7 +37,7 @@ WS2812 backend and additional display backends are not implemented.
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
-| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Production compiles the real UART/PPS source; development compiles the simulated source and USB console. Stage 2C.2 fault injection is not implemented. |
+| Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | `pico2` and `pico2-dev` use the same RP2350 target, firmware architecture, dependencies, and selected PD-2200 backend. Production compiles the real UART/PPS source; development compiles the simulated source and USB console. Stage 2C.2 receiver fault injection is development-only; physical Pico 2 verification remains pending. |
 | CE display, graphics, personalization, and enclosure direction | **Selected design / approved requirement** | The display boundary and PD-2200 backend are implemented in Stage 1. Compile-time profile selection and typed configuration defaults are implemented in Stage 2A. No LED framebuffer/backend, font/animation/theme system, or prototype light-well/enclosure implementation is included. |
 
 ## CE engineering decisions and requirements
@@ -61,7 +61,7 @@ The current source still determines what is implemented.
 | Logical framebuffer independent of physical LED ordering | **Selected design / approved requirement** | Application drawing coordinates should not encode panel-specific serpentine/order mapping. Physical mapping belongs in a replaceable backend/configuration layer. No such framebuffer exists yet. |
 | Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before connecting real GPS. Display animation and theme demonstrations remain future Stage 2C work. |
 | Fonts, animations, overlays, calendar, special-day themes | **Selected design / approved requirement** | Intended presentation capabilities. Exact content, schedule, rendering resource limits, and precedence are not specified by the repository and remain to be designed. |
-| Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C console controls, fault injection, acquisition/recovery demonstrations, and calendar/theme scenarios remain future work. |
+| Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C.1 console controls and Stage 2C.2 receiver fault injection are implemented; acquisition/recovery demonstrations and calendar/theme scenarios remain future work. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After initial qualified GPS/PPS lock, local crystal-derived UTC may be estimated in HOLDOVER for at most 24 hours from the last qualified reference. Requalify through normal rules before LOCKED; expire to UNSYNCED at the limit. This is not implemented in inherited firmware, which invalidates UTC on reference loss. Accuracy is uncharacterized and is not GPS-verified. |
 | Conservative brightness and current limiting | **Selected design / approved requirement** | Display must constrain brightness/current for a household appliance. No CE brightness control, power budget, or current limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
 | Prototype light-well grid, diffuser, enclosure | **Proposed but not finalized** | Mechanical/optical development direction. Pitch, depth, divider geometry, diffuser, materials, ventilation, and enclosure dimensions are not specified or physically evaluated in this repository. |
@@ -121,8 +121,10 @@ event is over 20 ms late, the simulator drops pending data, marks an input
 discontinuity, and does not replay an edge with a backdated timestamp. The
 shared qualification engine remains responsible for accepting or rejecting
 subsequent association and cadence. Stage 2C.1 adds a development-only USB
-monitor/console described below. Stage 2C.2 fault injection, acquisition and
-recovery demonstrations, and calendar/theme scenarios remain future work.
+monitor/console described below. Stage 2C.2 fault controls originate in the
+simulated receiver and are detailed in the [Consumer Edition requirements](Consumer-Edition-Requirements).
+Acquisition/recovery demonstrations and calendar/theme scenarios remain future
+work.
 
 ## Development USB monitor and console
 
@@ -146,7 +148,14 @@ bytes are reported by `status`. Input and output service are nonblocking and
 bounded per main-loop iteration. The console source is excluded from the
 production `pico2` build; production retains its existing bounded diagnostic
 queue and has no development commands. Host tests cover console behavior and
-simulator reseeding; physical USB terminal behavior remains unverified here.
+simulator reseeding. Stage 2C.1 physical Pico 2 console verification is complete
+per current project status; Stage 2C.2 fault verification remains pending.
+
+Stage 2C.2 adds receiver-originated GPS-message, PPS-output, RMC-checksum, and
+RMC-timing fault controls to `pico2-dev`; they do not directly modify the
+timebase. Supported commands and exact scheduled offsets are recorded in the
+[Consumer Edition requirements](Consumer-Edition-Requirements). Host fault
+tests pass; physical Pico 2 verification remains pending.
 
 ## Display backend and PD-2200 boundaries
 
@@ -228,8 +237,8 @@ transport boundary from verified target documentation/tests.
 - Compile-time personalization is the production direction. `pico2-dev`
   provides simulated GPS/PPS input through the shared timing qualification
   engine and the development-only USB monitor/console. Stage 2C.2 fault
-  injection, animation/theme demonstrations, and calendar scenarios remain
-  future work.
+  injection is implemented in the simulated receiver; animation/theme
+  demonstrations and calendar scenarios remain future work.
 - No physical UI button is in the selected Dad build. The current firmware
   defaults its selected display zone to UTC; the civil-time conversion library
   still supports all inherited U.S. zones.

@@ -3,9 +3,15 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace gps_input { struct FaultControls; }
+
 namespace dev_console {
 class Console;
-enum class Command : uint8_t { status, set_time, reset };
+enum class Command : uint8_t {
+    status, set_time, reset,
+    fault_status, gps_off, gps_on, pps_off, pps_on,
+    rmc_bad_checksum, rmc_early, rmc_late, rmc_normal, fault_clear,
+};
 using CommandHandler = void (*)(void*, Command, int64_t, Console&);
 
 class Console {
@@ -46,4 +52,7 @@ private:
     bool ignore_lf_ = false;
     bool line_overflow_ = false;
 };
+
+// Keep the receiver-control report consistent between firmware and host tests.
+void writeFaultStatus(const gps_input::FaultControls& faults, Console& console);
 }

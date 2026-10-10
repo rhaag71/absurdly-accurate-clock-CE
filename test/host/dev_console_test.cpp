@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstring>
 #include "dev_console.hpp"
+#include "gps_input_simulated.hpp"
 
 namespace {
 struct Calls {
@@ -9,6 +10,7 @@ struct Calls {
     unsigned reset = 0;
     unsigned set_time = 0;
     int64_t epoch = 0;
+    gps_input::FaultControls faults;
 };
 
 void handler(void* opaque, dev_console::Command command, int64_t epoch,
@@ -20,10 +22,31 @@ void handler(void* opaque, dev_console::Command command, int64_t epoch,
     } else if (command == dev_console::Command::reset) {
         ++calls.reset;
         console.writeLine("RESET RESPONSE");
-    } else {
+    } else if (command == dev_console::Command::set_time) {
         ++calls.set_time;
         calls.epoch = epoch;
         console.writeLine("TIME RESPONSE");
+    } else if (command == dev_console::Command::fault_status) {
+        dev_console::writeFaultStatus(calls.faults, console);
+    } else if (command == dev_console::Command::fault_clear) {
+        calls.faults = {};
+        console.writeLine("Fault controls cleared");
+    } else if (command == dev_console::Command::gps_off) {
+        calls.faults.gps_messages = false;
+    } else if (command == dev_console::Command::gps_on) {
+        calls.faults.gps_messages = true;
+    } else if (command == dev_console::Command::pps_off) {
+        calls.faults.pps_output = false;
+    } else if (command == dev_console::Command::pps_on) {
+        calls.faults.pps_output = true;
+    } else if (command == dev_console::Command::rmc_bad_checksum) {
+        calls.faults.rmc_mode = gps_input::RmcMode::bad_checksum;
+    } else if (command == dev_console::Command::rmc_early) {
+        calls.faults.rmc_mode = gps_input::RmcMode::early;
+    } else if (command == dev_console::Command::rmc_late) {
+        calls.faults.rmc_mode = gps_input::RmcMode::late;
+    } else if (command == dev_console::Command::rmc_normal) {
+        calls.faults.rmc_mode = gps_input::RmcMode::normal;
     }
 }
 
@@ -58,6 +81,7 @@ void monitorConsoleTransitionsAndPriority() {
     drain(console, output, sizeof(output));
     assert(std::strstr(output, "help       Show commands") != nullptr);
     assert(std::strstr(output, "time YYYY-MM-DD HH:MM:SS") != nullptr);
+    assert(std::strstr(output, "fault status | gps") != nullptr);
     assert(std::strstr(output, "suppressed one") == nullptr);
     assert(std::strstr(output, "aac> ") != nullptr);
 
@@ -151,10 +175,65 @@ void timeValidationAndBoundedDiagnostics() {
     drain(console, output, sizeof(output));
     assert(std::strstr(output, "retained") == nullptr); // No backlog replay.
 }
+
+void faultCommandsStatusAndValidation() {
+    dev_console::Console console;
+    Calls calls;
+    char output[2048];
+    feed(console, "\n", calls);
+    drain(console, output, sizeof(output));
+
+    feed(console, "fault status\n", calls);
+    drain(console, output, sizeof(output));
+    assert(std::strstr(output, "GPS messages : ON") != nullptr);
+    assert(std::strstr(output, "PPS output   : ON") != nullptr);
+    assert(std::strstr(output, "RMC mode     : NORMAL") != nullptr);
+
+    const char* commands[] = {
+        "fault gps off\n", "fault pps off\n", "fault rmc bad-checksum\n",
+        "fault rmc early\n", "fault rmc late\n", "fault rmc normal\n",
+        "fault pps on\n", "fault gps on\n",
+    };
+    for (const char* command : commands) {
+        feed(console, command, calls);
+        drain(console, output, sizeof(output));
+    }
+    assert(calls.faults.gps_messages && calls.faults.pps_output);
+    assert(calls.faults.rmc_mode == gps_input::RmcMode::normal);
+
+    feed(console, "fault gps off\nfault pps off\nfault rmc early\nfault status\n", calls);
+    drain(console, output, sizeof(output));
+    assert(!calls.faults.gps_messages && !calls.faults.pps_output);
+    assert(calls.faults.rmc_mode == gps_input::RmcMode::early);
+    assert(std::strstr(output, "GPS messages : OFF") != nullptr);
+    assert(std::strstr(output, "PPS output   : OFF") != nullptr);
+    assert(std::strstr(output, "RMC mode     : EARLY") != nullptr);
+
+    const gps_input::FaultControls before = calls.faults;
+    const char* invalid[] = {
+        "fault\n", "fault gps\n", "fault gps maybe\n", "fault pps on extra\n",
+        "fault rmc\n", "fault rmc fast\n", "fault status extra\n",
+        "fault clear extra\n", "fault unknown off\n",
+    };
+    for (const char* command : invalid) {
+        feed(console, command, calls);
+        drain(console, output, sizeof(output));
+        assert(std::strstr(output, "Usage: fault") != nullptr);
+        assert(calls.faults.gps_messages == before.gps_messages);
+        assert(calls.faults.pps_output == before.pps_output);
+        assert(calls.faults.rmc_mode == before.rmc_mode);
+    }
+
+    feed(console, "fault clear\n", calls);
+    drain(console, output, sizeof(output));
+    assert(calls.faults.gps_messages && calls.faults.pps_output);
+    assert(calls.faults.rmc_mode == gps_input::RmcMode::normal);
+}
 }
 
 int main() {
     monitorConsoleTransitionsAndPriority();
     editingWhitespaceUnknownAndOverflow();
     timeValidationAndBoundedDiagnostics();
+    faultCommandsStatusAndValidation();
 }

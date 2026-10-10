@@ -26,6 +26,12 @@ c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     src/nmea_rmc.cpp src/nmea_gga.cpp src/clock_state.cpp src/gps_input_simulated.cpp \
     test/host/simulated_gps_test.cpp -o "$test_dir/simulated_gps"
 "$test_dir/simulated_gps"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
+    -DAAC_DISPLAY_BACKEND_PD2200 -I include \
+    src/nmea_rmc.cpp src/nmea_gga.cpp src/clock_state.cpp src/gps_input_simulated.cpp \
+    test/host/simulated_fault_test.cpp -o "$test_dir/simulated_fault"
+"$test_dir/simulated_fault"
+echo "Simulated GPS/PPS fault tests passed"
 c++ -std=c++11 -Wall -Wextra -Werror -I test/host/stubs -I include \
     test/host/display_hardware_test.cpp -o "$test_dir/display_hardware"
 "$test_dir/display_hardware"

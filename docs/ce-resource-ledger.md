@@ -70,6 +70,52 @@ Static SRAM percentages below use the 524,288-byte linker `RAM` region and ELF
 | Linker `RAM` region | 524,288 B | 524,288 B | — |
 | Main-RAM address space after those static sections (calculated) | 512,756 B | 512,172 B | −584 B |
 
+### Stage 2C.2 measurements and change from Stage 2C.1
+
+The table above remains the preserved Stage 2C.1 baseline. Measurements below
+were taken from the Stage 2C.2 builds on **2026-10-10** using the same commands,
+PlatformIO installation, linker region, and PlatformIO sketch-size report.
+
+| Profile / resource | Stage 2C.1 baseline | Stage 2C.2 build | Absolute change |
+| --- | ---: | ---: | ---: |
+| `pico2` flash, PlatformIO sketch report | 46,624 B | 46,624 B | 0 B |
+| `pico2` static SRAM including vector table | 11,532 B | 11,532 B | 0 B |
+| `pico2-dev` flash, PlatformIO sketch report | 49,640 B | 51,648 B | +2,008 B |
+| `pico2-dev` static SRAM including vector table | 12,116 B | 12,132 B | +16 B |
+
+Stage 2C.2 percentages, calculated from the same capacities: production flash
+1.113% and static SRAM 2.200%; development flash 1.233% and static SRAM
+2.314%. The development increase is 0.048 percentage points of maximum sketch
+capacity and 0.003 percentage points of the linker `RAM` region. Calculated
+remaining sketch capacity is 4,143,584 B for production and 4,138,560 B for
+development. Main-RAM address space after static sections is 512,756 B and
+512,156 B respectively; these remain linker arithmetic, not runtime margins.
+
+The development PlatformIO RAM report is 11,860 B (`.data + .bss`, 2.3% rounded)
+and its ELF static SRAM total including the unchanged 272-byte vector table is
+12,132 B. ELF section changes from the Stage 2C.1 measurements are `.text`
++928 B, `.rodata` +800 B, `.data` +280 B, and `.bss` −264 B. The net static SRAM
+increase is 16 B. No linker map file is available to attribute the flash delta
+to individual functions or data objects. Production measurements are unchanged,
+consistent with the production source filter excluding simulator and console
+code.
+
+No new fixed-capacity buffer was introduced. The development simulator now
+stores independent receiver and delivered pulse snapshots plus the GPS/PPS/RMC
+control state; the total build-derived static SRAM delta is +16 B, but the
+individual simulator object allocation is not isolated in the linker report.
+The console's existing buffers are unchanged. No GPIO, UART, interrupt, PIO,
+DMA, or other peripheral assignment was added. No application PIO or DMA
+allocation was found. Control parsing and fault selection add bounded
+development-only work; RMC checksum generation still traverses the bounded
+sentence, and late mode omits GGA for that cycle. CPU time and timing margin
+were not measured.
+
+Both profiles built successfully without compiler or linker warnings in the
+captured output. Host tests, including simulated faults, passed. **Hardware
+testing is pending:** Stage 2C.2 fault behavior has not been verified on a
+physical Pico 2.
+
 PlatformIO rounds its RAM percentages to one decimal place. Its RAM summary
 does not include the 272-byte `.ram_vector_table`; the ELF section totals do.
 The “remaining” figures describe link-time region arithmetic only. They are
@@ -155,6 +201,7 @@ second time.
 | Development console command line | 80 bytes (79 input characters plus terminator) | Development only |
 | Development console object | 1,656 bytes total in ELF symbol (`nm`); includes the three arrays above plus state/counters/padding | Development only |
 | Simulated NMEA stream storage | 192 bytes | Development only |
+| Simulated fault state and receiver/delivered pulse snapshots | Added in Stage 2C.2; no new buffer. Whole-profile static SRAM change is build-derived at +16 B; individual object size is not isolated. | Development only |
 | RMC parser line storage | 128 bytes | Both profiles |
 | GGA parser line storage | 128 bytes | Both profiles |
 | Display frame | Two 21-byte rows (20 display cells plus terminator per row), from `clock_display::Frame` | Both profiles |
@@ -192,6 +239,7 @@ measured hardware timing or CPU-utilization results.
 | Main-loop UART service gap | More than 20,000 µs triggers association discard and startup drain | Buffered serial bytes cannot safely be assigned fresh processing timestamps after a long stall. This is a configured safeguard, not a measured worst-case loop time. |
 | GPS bytes processed per loop | At most 64 | Bounds input work so GPS traffic cannot starve later loop services. |
 | Simulator schedule | 1,000,000 µs PPS period; RMC starts 200,000 µs after its pulse; events over 20,000 µs late are dropped | Development-only synthetic timing; not evidence of physical timing accuracy. |
+| Simulated fault schedules | EARLY RMC starts at 5,000 µs after PPS (first byte timestamp 6,041 µs); LATE starts at 880,000 µs (CR completion 916,458 µs); LATE omits GGA | Deterministic development-only schedules, verified in native virtual-time tests. Not physical receiver measurements. |
 | Development console input/output | Up to 32 input bytes and 64 output bytes per loop | Bounded USB service; no measured USB throughput or timing margin. |
 | Display output | At most one PD-2200 command byte per service call when UART writable | Backend work is bounded; actual wire/backpressure behavior is hardware dependent. |
 | Watchdog | 4,000 ms timeout; recurring feed at end of completed main-loop services | Hardware reset protection is implemented. Worst-case feed interval and physical reset behavior are not measured by these builds. |
@@ -250,7 +298,7 @@ No resource figures in this section are firmware build measurements.
 | Matrix pixel mapping and physical orientation | Not established; do not assume serpentine order, connector orientation, or first-pixel location. |
 | Diffuser, enclosure, and optical effects | Not measured; evaluate readability, thermal impact, and light leakage on the physical assembly. |
 | GPS PPS/RMC hardware timing | Physical GPS receiver setup and whole-second association timing require receiver-specific observation. Simulator qualification does not establish these properties. |
-| Development USB console on Pico 2 | Host tests and firmware builds passed; physical terminal behavior and timing remain unverified. |
+| Development USB console on Pico 2 | Stage 2C.1 physical console verification is complete per current project status. Stage 2C.2 fault behavior remains physically unverified. |
 
 ## Resource concerns and action items
 
@@ -265,11 +313,13 @@ No resource figures in this section are firmware build measurements.
 4. Before WS2812 implementation, establish the actual panel's power, thermal,
    electrical timing, mapping, buffer, PIO, and DMA requirements. Keep all such
    values marked planned until measured or build-derived.
-5. Verify physical GPS PPS/RMC timing and complete the Stage 2C.1 Pico 2 console
-   checks before recording those behaviors as physically qualified.
+5. Verify physical GPS PPS/RMC timing and complete Stage 2C.2 fault-injection
+   checks before recording those behaviors as physically qualified. Stage
+   2C.1 console verification is complete per current project status.
 
 ## Milestone history
 
 | Date | Milestone | Production (`pico2`) | Development (`pico2-dev`) | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-10-09 | First resource baseline; Stage 2C.1 development-console working-tree state | Flash 46,624 B; static SRAM including vector table 11,532 B | Flash 49,640 B; static SRAM including vector table 12,116 B | Both builds and host suite passed. Console remains unverified on physical Pico 2. No prior baseline or historical resource delta exists. |
+| 2026-10-10 | Stage 2C.2 development-only simulated GPS/PPS fault injection | Flash 46,624 B (Δ 0); static SRAM 11,532 B (Δ 0) | Flash 51,648 B (Δ +2,008); static SRAM including vector table 12,132 B (Δ +16) | Both builds and host fault/regression suite passed. No GPIO/peripheral assignment changes. Physical Pico 2 fault-injection verification is **PENDING**. |

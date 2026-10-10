@@ -166,6 +166,35 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
         snprintf(line, sizeof(line), "Console response bytes dropped: %lu",
                  static_cast<unsigned long>(development_console.responseBytesDropped()));
         console.writeLine(line);
+    } else if (command == dev_console::Command::fault_status) {
+        dev_console::writeFaultStatus(input.faults(), console);
+    } else if (command == dev_console::Command::fault_clear) {
+        input.clearFaults();
+        console.writeLine("Fault controls cleared; receiver continues");
+    } else if (command == dev_console::Command::gps_off) {
+        input.setGpsMessages(false);
+        console.writeLine("Simulated GPS messages OFF");
+    } else if (command == dev_console::Command::gps_on) {
+        input.setGpsMessages(true);
+        console.writeLine("Simulated GPS messages ON");
+    } else if (command == dev_console::Command::pps_off) {
+        input.setPpsOutput(false);
+        console.writeLine("Simulated PPS output OFF");
+    } else if (command == dev_console::Command::pps_on) {
+        input.setPpsOutput(true);
+        console.writeLine("Simulated PPS output ON");
+    } else if (command == dev_console::Command::rmc_bad_checksum) {
+        input.setRmcMode(gps_input::RmcMode::bad_checksum);
+        console.writeLine("Simulated RMC mode: BAD-CHECKSUM");
+    } else if (command == dev_console::Command::rmc_early) {
+        input.setRmcMode(gps_input::RmcMode::early);
+        console.writeLine("Simulated RMC mode: EARLY (5 ms after PPS)");
+    } else if (command == dev_console::Command::rmc_late) {
+        input.setRmcMode(gps_input::RmcMode::late);
+        console.writeLine("Simulated RMC mode: LATE (880 ms after PPS)");
+    } else if (command == dev_console::Command::rmc_normal) {
+        input.setRmcMode(gps_input::RmcMode::normal);
+        console.writeLine("Simulated RMC mode: NORMAL");
     }
 }
 

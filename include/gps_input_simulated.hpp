@@ -6,6 +6,14 @@
 #include "gps_input_event.hpp"
 
 namespace gps_input {
+enum class RmcMode : uint8_t { normal, bad_checksum, early, late };
+
+struct FaultControls {
+    bool gps_messages = true;
+    bool pps_output = true;
+    RmcMode rmc_mode = RmcMode::normal;
+};
+
 class SimulatedSource {
 public:
     void begin() {}
@@ -22,6 +30,11 @@ public:
     int64_t receiverUtcSeconds() const {
         return receiver_utc_valid_ ? last_receiver_utc_seconds_ : next_utc_seconds_;
     }
+    const FaultControls& faults() const { return faults_; }
+    void setGpsMessages(bool enabled);
+    void setPpsOutput(bool enabled) { faults_.pps_output = enabled; }
+    void setRmcMode(RmcMode mode) { faults_.rmc_mode = mode; }
+    void clearFaults();
     static const char* diagnosticLine() { return "GPS_SOURCE=SIMULATED\r\n"; }
 
 private:
@@ -32,7 +45,10 @@ private:
     void buildCycle();
     bool appendSentence(const char* body);
 
-    clock_model::Pulse pulse_;
+    // Receiver time and the pulse stream presented to the shared timebase are
+    // separate: disabling PPS suppresses events without stopping receiver time.
+    clock_model::Pulse receiver_pulse_;
+    clock_model::Pulse delivered_pulse_;
     clock_model::Pulse stream_pulse_;
     uint32_t next_pps_us_ = 0;
     uint32_t stream_start_us_ = 0;
@@ -46,5 +62,6 @@ private:
     bool started_ = false;
     bool discontinuity_ = false;
     bool receiver_utc_valid_ = false;
+    FaultControls faults_;
 };
 }

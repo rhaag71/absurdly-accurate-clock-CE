@@ -204,11 +204,51 @@ command responses have a separate bounded 512-byte queue and priority. Queued
 diagnostics are discarded on mode transitions, so exiting does not dump old
 records. A slow or disconnected USB terminal cannot block clock servicing.
 The development console implementation is excluded from production `pico2`,
-which retains asynchronous diagnostics only. Host tests pass; physical Pico 2
-terminal behavior requires on-device verification.
+which retains asynchronous diagnostics only. Stage 2C.1 host tests and physical
+Pico 2 console verification are complete. Stage 2C.2 physical fault-injection
+verification remains pending.
 
-Stage 2C.2 remains future work: fault injection, acquisition/recovery
-demonstrations, and calendar/theme test scenarios are not implemented.
+### Development GPS/PPS fault injection
+
+Implemented in Stage 2C.2 for `pico2-dev` only. The console accepts:
+
+- `fault status`
+- `fault gps off|on`
+- `fault pps off|on`
+- `fault rmc bad-checksum|early|late|normal`
+- `fault clear`
+
+GPS-message output, delivered PPS output, and RMC mode are independent receiver
+controls. Defaults are GPS ON, PPS ON, and RMC NORMAL. Settings persist until
+changed or the development firmware restarts. `fault status` reports these
+receiver controls; the separate `status` command continues to report the actual
+qualified timebase state. Invalid fault commands report usage and do not alter
+the controls.
+
+GPS OFF suppresses synthetic RMC and GGA bytes while the receiver's internal
+one-second UTC schedule and enabled PPS output continue. GPS ON resumes with
+the current receiver label; the timebase must recover through its normal
+freshness and qualification rules. PPS OFF suppresses delivered edges but
+leaves GPS sentences and receiver UTC scheduling active. PPS ON emits only
+future scheduled edges, with no catch-up pulses; ordinary cadence and UTC
+qualification must reacquire. `fault clear` restores the three receiver
+defaults without resetting or qualifying the timebase. Existing `time` and
+`reset` receiver reseeding preserves the selected fault controls and clears
+pending synthetic events.
+
+BAD-CHECKSUM changes the generated RMC checksum and sends the record through the
+normal UART-byte and NMEA-parser path; GGA remains available. EARLY schedules
+the RMC start at 5 ms after PPS (first byte event at 6,041 µs after PPS), before
+the 20 ms association minimum. LATE schedules the RMC start at 880 ms; the CR
+completion event occurs at 916,458 µs after PPS, beyond the 900 ms limit but
+before the next pulse. GGA is omitted in LATE mode so 9,600-baud sentences do
+not overlap the next one-second cycle. The simulator retains its 20 ms event
+servicing-lateness safeguard. These are deterministic simulated faults, not
+physical receiver or GPS-accuracy measurements. Physical Pico 2 verification
+of the Stage 2C.2 console and fault behavior remains pending.
+
+Acquisition/recovery demonstrations and calendar/theme test scenarios remain
+future work.
 
 Authoritative UTC must never be restored from persistent storage and falsely
 treated as GPS-qualified after a cold boot.
