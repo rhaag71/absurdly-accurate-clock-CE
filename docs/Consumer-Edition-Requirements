@@ -270,8 +270,12 @@ Seconds may appear on the primary display, but are not required there.
 
 The primary display should remain visually legible. Dad's build uses one
 **WS2812 8x32 Panel**: 8 rows by 32 columns, 256 individually addressable RGB
-pixels. Its future logical pixel mapping must remain independent of physical
-pixel order. The driver is not yet implemented.
+pixels. The optional PIO software has a logical 32x8 mapping helper matching
+the physically observed topology: raw index 0 is top-left, columns progress
+left-to-right, and traversal alternates vertically (first column top-to-bottom).
+Raw 0..255 chase, RGB transport, four-corner proof, and logical perimeter trace
+were physically verified. The implemented logical row and column scans are
+the next hardware proof. Final clock rendering follows physical geometry work.
 
 Display hardware is build-specific and replaceable.
 
@@ -286,10 +290,21 @@ The selected physical display must not dictate the timing architecture.
 
 ## 8. Matrix, Status Pixels, and Visual Effects
 
-The WS2812B matrix is the selected primary display. Up to three optional
-additional WS2812 pixels may be chained after the matrix for status; their use
-and meanings are not fixed. WS2812 GP8 is proposed but not implemented or
-physically tested.
+The WS2812B matrix is the selected primary display and remains exactly 256
+pixels. Approximately 3–4 discrete WS2812 status LEDs form a separate chain
+with their own data GPIO; they are not appended to the matrix. The selected
+panel driver owns GP8 when compiled in.
+The physical panel has visibly responded to the raw-index chase. Logical
+mapping is implemented as top-left origin, left-to-right column progression,
+and alternating vertical traversal, matching the physically observed panel
+topology. Development shows dim RGB fills, darkness, each of the four
+logical corners individually, darkness, a single dim pixel tracing the outer
+logical perimeter once, darkness again, then a single dim white pixel chasing
+raw indices 0..255. The corners and perimeter trace are physically verified;
+row and column scans await physical verification. No higher-level effects are
+implemented. The user observed some red coloration during the blue fill; this
+remains an observation only. Row/column physical verification, effects,
+current budgeting, and final typography/layout remain future work.
 
 Animation style is not fixed. Fades, dissolves, decays, color transitions, and
 rolling effects are candidates for early development-build testing. Fonts,
@@ -301,12 +316,15 @@ The provisional system power target is 5 V / 2 A. Verify actual panel current,
 brightness/current limits, thermal behavior, level shifting, and power margin
 by measurement. This target is not a measured result.
 
-One of the optional three additional chained pixels is designated for
-timing-quality indication: LOCKED, HOLDOVER, or UNSYNCED. Colors, fades, other
-effects, timing, and brightness remain display-development decisions. The
-status pixel shares the WS2812 serial chain and adds no Pico GPIO. It must never
-imply that live GPS PPS is present while showing HOLDOVER. No status-pixel code
-is implemented in Stage 1.
+The separate status driver will own its LED count, status meanings/colors,
+data GPIO, and update cadence. One indicator is intended for timing quality:
+LOCKED, HOLDOVER, or UNSYNCED, and must not imply live GPS PPS while showing
+HOLDOVER. The intended data path is Pico GPIO TBD through a spare channel on
+the existing SN74HCT541N and a separate approximately 330 Ω series resistor.
+No GPIO is assigned or reserved before the driver is implemented. The drivers
+must not depend on each other; a shared low-level WS2812 transport is optional.
+The main panel remains exactly 256 pixels, independent of status updates and
+panel geometry. No status-pixel code is implemented in Stage 1.
 
 The selected electrical direction uses a 74HCT541 5 V level shifter and an
 approximately 330 Ω series resistor. Exact circuit/layout and panel operation
@@ -347,8 +365,13 @@ selected drivers consume the same coherent presentation snapshot. The generic
 framework performs static composition only; it contains no device protocol,
 rendering, or hardware ownership. Each driver owns its formatting, buffers,
 cadence, transport, initialization, and bounded nonblocking service. A driver
-must not access or alter authoritative time. No WS2812, MAX7219, or TFT driver
-is implemented yet.
+must not access or alter authoritative time. The WS2812 driver provides raw
+pixel access and logical 32x8 mapping for the observed vertical serpentine
+column topology. The four-corner proof and perimeter trace are physically
+verified. Logical row/column scans are implemented and await physical
+verification; clock rendering awaits later authorized work. MAX7219 and TFT
+drivers are
+not implemented.
 
 The optional PD-2200 driver retains its verified Noritake-compatible command
 behavior. For the verified PD-2200, command `0x0E` clears displayed characters
@@ -359,9 +382,10 @@ adapter, PD-2200 command driver, and UART1/RS-232 transport are distinct layers.
 The framework supports multiple selected drivers sharing one presentation
 snapshot. Different technologies and refresh rates can be composed; each
 driver must keep service bounded so one output does not hold up timing or other
-drivers. Current implemented drivers are STDOUT and the optional PD-2200 VFD.
-The WS2812 8x32 Panel remains the selected consumer hardware, with its driver
-planned but not implemented.
+drivers. Current implemented drivers are STDOUT, optional PD-2200 VFD, and
+optional WS2812. The WS2812 8x32 Panel remains selected consumer hardware; its
+final logical clock renderer depends on physical verification of corrected
+corner rendering.
 
 ### Future multi-display composition
 

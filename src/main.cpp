@@ -106,13 +106,29 @@ public:
 };
 UsbDisplaySink usb_display_sink;
 #if defined(AAC_DISPLAY_VFD)
+#if defined(AAC_DISPLAY_WS2812)
+display_selection::Selected display{
+    stdout_display::Driver{usb_display_sink}, clock_display::Pd2200Backend{},
+    ws2812_display::Driver{}};
+#else
 display_selection::Selected display{
     stdout_display::Driver{usb_display_sink}, clock_display::Pd2200Backend{}};
+#endif
+#elif defined(AAC_DISPLAY_WS2812)
+display_selection::Selected display{
+    stdout_display::Driver{usb_display_sink}, ws2812_display::Driver{}};
 #else
 display_selection::Selected display{stdout_display::Driver{usb_display_sink}};
 #endif
 #elif defined(AAC_DISPLAY_VFD)
+#if defined(AAC_DISPLAY_WS2812)
+display_selection::Selected display{
+    clock_display::Pd2200Backend{}, ws2812_display::Driver{}};
+#else
 display_selection::Selected display{clock_display::Pd2200Backend{}};
+#endif
+#elif defined(AAC_DISPLAY_WS2812)
+display_selection::Selected display{ws2812_display::Driver{}};
 #endif
 uint32_t last_service_us = 0;
 bool discard_rx = true; // Startup delays buffered bytes without arrival timestamps.

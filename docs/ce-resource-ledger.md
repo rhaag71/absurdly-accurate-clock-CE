@@ -116,6 +116,52 @@ captured output. Host tests, including simulated faults, passed. **Hardware
 testing is pending:** Stage 2C.2 fault behavior has not been verified on a
 physical Pico 2.
 
+### WS2812 bring-up profile (2026-10-11)
+
+The initial dedicated `pico2-dev-ws2812` profile was built with the same
+pinned PlatformIO platform and Arduino-Pico framework. That earlier renderer
+used 47,532 B flash and 12,312 B `.data + .bss`; its driver object was 792 B.
+The selected profile replaces the default STDOUT display, so whole-profile
+deltas are not the framebuffer size alone.
+
+Flash use is 1,012 B above default development. This includes the PIO driver,
+bring-up sequencer, and SDK PIO calls; no per-function flash attribution is
+claimed. Fresh default builds report `pico2` 44,888 B flash / 11,312 B
+`.data + .bss`, and `pico2-dev` 46,520 B / 11,632 B. Static SRAM totals
+including the 272-byte vector table are 11,584 B and 11,904 B. The WS2812
+buffer and PIO instruction image are absent from both defaults.
+
+The following logical mapping/effects profile is retained as a historical
+measurement; that renderer was later removed after target-runtime problems.
+The restored raw bring-up profile is retained as the preceding milestone; the
+latest corner-proof build measurements are recorded in the milestone table.
+
+### Restored raw bring-up build (2026-10-11)
+
+Fresh `pico2-dev-ws2812` build after removing logical mapping, effects, and
+startup bisect code: 47,396 B flash and 12,312 B `.data + .bss`; adding the
+272-byte vector table gives 12,584 B static SRAM. This is 1,780 B less flash
+and 8 B less `.data + .bss` than the removed full-demo build. It is 136 B less
+flash than the historical first bring-up measurement (47,532 B); `.data +
+.bss` is unchanged from that historical build. The linked display object is
+792 B, including the 768-byte framebuffer and driver state; the PIO instruction
+image adds 8 B of SRAM. At that milestone the restored image awaited physical
+reverification; the user subsequently confirmed that raw-fill/chase image,
+four-corner proof, and perimeter trace on hardware. The new row/column scans
+await physical testing.
+
+The selected driver owns GP8, PIO0 SM0, and four instruction words at fixed
+offset 0. It checks SM0 before claiming it; a conflict leaves GP8 low and
+stops initialization. It uses no DMA and adds no interrupt. At 150 MHz,
+divider 15 gives a 10 MHz PIO clock; ten cycles encode each 800 kHz bit.
+T0H/T0L are 3/7 cycles; T1H/T1L are 6/4 cycles. The service loop queues at
+most eight 24-bit pixel words per application pass and uses a nonblocking 1 ms
+interval after the final FIFO write. These are source/build-derived values;
+the exact waveform has not been instrumentally measured. User reports the
+panel visibly responds to the raw-index chase. Its topology is physically
+established as top-left-start vertical serpentine columns; the corrected
+logical corner frames await re-verification.
+
 PlatformIO rounds its RAM percentages to one decimal place. Its RAM summary
 does not include the 272-byte `.ram_vector_table`; the ELF section totals do.
 The “remaining” figures describe link-time region arithmetic only. They are
@@ -156,7 +202,8 @@ selected backend implementation.
 | GP2 | GPS PPS input, rising-edge interrupt | Active | Unallocated | No physical PPS interrupt is registered for simulated input. |
 | GP4 | Optional PD-2200 UART1 TX (`Serial2`) through MAX3232 | Unallocated | Unallocated | Claimed only when `AAC_DISPLAY_VFD` is selected. |
 | GP5 | Unassigned / available | Unallocated | Unallocated | VFD has no RX GPIO; `Serial2.setRX(-1)` disables UART1 RX when VFD is selected. |
-| GP8 | Proposed WS2812 DATA | Planned | Planned | No driver, pin setup, or active allocation. |
+| GP8 | WS2812 DATA | Unallocated | Active only in `pico2-dev-ws2812` | Set low as GPIO before PIO mux; external SN74HCT541N and approximately 330-ohm resistor connect to panel DIN. |
+| Separate WS2812 status DATA | GPIO TBD | Unallocated | Unallocated | Planned separate chain of approximately 3–4 status LEDs, through another SN74HCT541N channel and its own approximately 330-ohm resistor. No pin is assigned or reserved before driver implementation. |
 | GP6, GP9–GP22 | No current CE assignment identified | Unassigned | Unassigned | GP8 is separately listed above. No peripheral use is inferred from RP2350 capability. |
 | Board-defined `LED_BUILTIN` | Heartbeat output in `main.cpp` | Active | Active | Source uses the board macro; no numeric GPIO is assigned in project pin map, so the exact mapping is not asserted here. |
 
@@ -177,8 +224,8 @@ established by this ledger.
 | SPI controllers | Unallocated by application | No active application SPI initialization or transaction was found. Historical Bridge/SPI documentation is not an active allocation. |
 | I2C controllers | Unallocated by application | No active application I2C initialization was found. |
 | PWM | Unallocated by application | No application PWM setup was found. |
-| PIO blocks / state machines | No application allocation found | No application PIO program load or state-machine claim was found. Arduino-Pico PIO support in the framework does not itself prove an application allocation. |
-| PIO instruction memory | Unallocated by application | No application PIO program is loaded. Planned WS2812 use is not active. |
+| PIO blocks / state machines | No application allocation in defaults | `pico2-dev-ws2812` selects PIO0 SM0 explicitly (`pio_sm_is_claimed` then `pio_sm_claim`). If SM0 is already claimed, initialization leaves GP8 low and returns without starting the panel. PIO0 SM1 is not allocated or reserved; it is only a preferred future option for the separate status driver if available. |
+| PIO instruction memory | Unallocated by default; four words in selected profile | The WS2812 program is fixed at PIO0 instruction offset 0 and uses four of 32 PIO0 instruction words. No application PIO program competes in this profile. |
 | DMA channels | No application allocation found; framework ownership not fully verified | No application DMA claim/allocation was found. Do not infer free-channel count until framework and runtime ownership are inspected. |
 
 The framework contains peripheral support code, and framework-owned USB,
@@ -204,6 +251,7 @@ second time.
 | RMC parser line storage | 128 bytes | Both profiles |
 | GGA parser line storage | 128 bytes | Both profiles |
 | STDOUT pending output | 112-byte fixed line buffer, replaceable by current state; each service submits at most one whole line when CDC has room | Both default profiles |
+| WS2812 RGB framebuffer | 256 × 3-byte RGB values = 768 bytes; current `display` driver object is 800 bytes including 32 bytes of control state; PIO instruction image adds 8 bytes | `pico2-dev-ws2812` only; absent from default images |
 | VFD frame and output command | Two 21-byte rows and 5-byte maximum command, from `clock_display::Frame`/`Output` | VFD-selected builds only; absent from defaults |
 | GPS source, timebase, reception and display objects | Persistent globals in `src/main.cpp`; included in ELF totals. Aggregate per-object attribution was not established. | Profile-dependent source; shared timebase/display |
 
@@ -240,13 +288,16 @@ measured hardware timing or CPU-utilization results.
 | Simulator schedule | 1,000,000 µs PPS period; RMC starts 200,000 µs after its pulse; events over 20,000 µs late are dropped | Development-only synthetic timing; not evidence of physical timing accuracy. |
 | Simulated fault schedules | EARLY RMC starts at 5,000 µs after PPS (first byte timestamp 6,041 µs); LATE starts at 880,000 µs (CR completion 916,458 µs); LATE omits GGA | Deterministic development-only schedules, verified in native virtual-time tests. Not physical receiver measurements. |
 | Development console input/output | Up to 32 input bytes and 64 output bytes per loop | Bounded USB service; no measured USB throughput or timing margin. |
-| Display output | STDOUT submits at most one bounded line per service; VFD emits at most one payload byte per service after bounded startup command batches | Software service work is bounded; USB/UART transport behavior is hardware dependent. |
+| Display output | STDOUT submits at most one bounded line per service; VFD emits at most one payload byte per service after bounded startup command batches; WS2812 queues no more than eight words per service and uses a 1 ms nonblocking latch interval | Software service work is bounded; USB/UART/PIO electrical behavior is hardware dependent. |
 | Watchdog | 4,000 ms timeout; recurring feed at end of completed main-loop services | Hardware reset protection is implemented. Worst-case feed interval and physical reset behavior are not measured by these builds. |
 
 No loop-frequency, interrupt-latency, UART-overrun, USB-throughput, CPU-load,
 or timing-margin measurements were taken for this baseline. Optional VFD power-on settling and reset/configure phases are now advanced
 using elapsed-time checks and bounded UART writes; no startup delay blocks the
-main loop. The WS2812 driver has no implementation or allocation.
+main loop. The optional WS2812 driver uses the bounded PIO service described
+above. Raw panel response and its top-left-start vertical serpentine column
+topology were physically verified; waveform measurement and corrected corner
+frame behavior remain unverified.
 
 ## Display backend resource considerations
 
@@ -278,22 +329,51 @@ main loop. The WS2812 driver has no implementation or allocation.
   and [PPS/timebase notes](pps-timebase.md). Do not generalize model-specific
   observations to other displays.
 
-### Planned backend: one 8x32 WS2812B RGB panel
+### Optional backend: one 8x32 WS2812 RGB panel
 
-- **Planned, not allocated:** 256 RGB pixels; proposed data output GP8 and
-  PIO-driven transmission. No PIO state machine, instruction memory, DMA
-  channel, or framebuffer is currently allocated for WS2812.
-- A tightly packed logical RGB framebuffer would require **768 bytes**
-  (`256 pixels × 3 bytes/pixel`, calculated); metadata, mapping, alignment,
-  staging, or double-buffering would add to that value. This is not current
-  SRAM usage.
-- Planned electrical elements are an SN74HCT541N level shifter powered from
-  5 V, approximately 330-ohm series data resistor, 100 nF local bypass, and
-  shared Pico/display ground. These details are not hardware qualified.
-- Preserve backend independence and future heterogeneous multi-display
-  composition. The timing engine must not wait on slow output. Resource budgets
-  for PIO, DMA, refresh time, buffers, and concurrent backends must be measured
-  or derived from an implemented design when that work is authorized.
+- The selected driver owns GP8 (Pico 2 physical pin 11), PIO0 SM0, four PIO
+  instruction words, and a 768-byte fixed RGB buffer. Its program is fixed at
+  offset 0; initialization checks that SM0 is available before claiming it.
+- No DMA channel or interrupt is used. Pixels serialize as WS2812 GRB, most
+  significant bit first. Raw physical index access remains available. The
+  logical 32x8 mapping matches the physically established topology: raw index
+  zero at top-left, columns progress left-to-right, and traversal alternates
+  vertically, starting top-to-bottom in the first column.
+- At the configured 150 MHz system clock, PIO divider 15 yields 10 MHz and ten
+  cycles per bit (800 kHz). T0H/T0L are 3/7 cycles; T1H/T1L are 6/4 cycles.
+  The driver waits nonblockingly for 1 ms after its final FIFO write before
+  sending another frame, including FIFO drain and a conservative reset-low
+  interval.
+- Development starts dark, shows fixed component-8 red, green, and blue fills,
+  returns dark, presents red/green/blue/yellow logical corners one at a time
+  (1.8 s each), returns dark, traces all 76 logical perimeter pixels clockwise
+  once, returns dark, scans rows 0..7 for 500 ms each and columns 0..31 for
+  150 ms each, returns dark, then chases one dim white pixel through raw
+  indices 0..255. Brightness is not a current limiter. The raw chase, panel
+  topology, four-corner proof, and perimeter trace were physically verified.
+  The scans await physical verification. Waveform measurements remain
+  unavailable.
+- The external path uses the wired SN74HCT541N and approximately 330-ohm series
+  resistor to panel DIN. Development uses a separate regulated 5 V panel supply
+  and shared ground. Current, signal quality, and thermal behavior are unknown.
+
+### Planned separate WS2812 status chain
+
+- Approximately 3–4 discrete WS2812 LEDs are a separate logical/electrical
+  device. They are not appended to the 256-pixel panel chain. This preserves
+  fixed panel geometry and lets panel rendering/transmission and status updates
+  remain independently owned and serviceable.
+- The future status driver owns its LED count, meanings/colors, data GPIO, and
+  update cadence. The main panel driver owns its 32x8 geometry, framebuffer,
+  clock presentation, and applicable themes/animations. The drivers should not
+  depend on each other; they may share a low-level WS2812 PIO transport.
+- Intended data path: unassigned Pico GPIO → spare channel on the existing
+  SN74HCT541N → separate approximately 330-ohm series resistor → status LEDs.
+  No GPIO has been selected or reserved.
+- PIO0 SM1 is preferred for status only if available when implemented. It is
+  not an allocation or reservation. Reusing the panel's loaded four-instruction
+  WS2812 program is preferred where practical. No status framebuffer, PIO
+  state machine, instruction memory, DMA, or interrupt is currently allocated.
 
 ## Power and physical measurement gaps
 
@@ -301,11 +381,11 @@ No resource figures in this section are firmware build measurements.
 
 | Item | Status |
 | --- | --- |
-| WS2812 panel current and brightness/current curve | Unknown; measure on the selected panel across intended brightness settings. |
+| WS2812 panel current and brightness/current curve | Unknown; the raw-index bring-up level is fixed to RGB component value 8/255 and is not a current limit. Measure on the selected panel across intended brightness settings. |
 | Panel thermal behavior | Unknown; requires representative enclosed operating measurements. |
 | 5 V supply capacity and margin | The 5 V / 2 A figure is a provisional planning target, not a verified requirement. Confirm panel, Pico, level-shifter, and transient loads before selecting limits. |
-| HCT541 logic levels and data integrity | Planned circuit; actual Pico-to-panel waveform and timing have not been measured. |
-| Matrix pixel mapping and physical orientation | Not established; do not assume serpentine order, connector orientation, or first-pixel location. |
+| HCT541 logic levels and data integrity | Wired SN74HCT541N plus approximately 330-ohm series resistor; actual Pico-to-panel waveform and timing have not been measured. Panel uses separate regulated 5 V during development and shares ground. |
+| Matrix pixel mapping and physical orientation | Established by raw chase, panel silkscreen, four-corner proof, and perimeter trace: raw zero is top-left; columns progress left-to-right with alternating vertical direction, first column top-to-bottom. Verify the implemented row and column scans on hardware. |
 | Diffuser, enclosure, and optical effects | Not measured; evaluate readability, thermal impact, and light leakage on the physical assembly. |
 | GPS PPS/RMC hardware timing | Physical GPS receiver setup and whole-second association timing require receiver-specific observation. Simulator qualification does not establish these properties. |
 | Development USB console on Pico 2 | Stage 2C.1 physical console verification is complete per current project status. Stage 2C.2 fault behavior remains physically unverified. |
@@ -320,9 +400,9 @@ No resource figures in this section are firmware build measurements.
    between the linker RAM region, scratch banks, and runtime allocator/stack use.
 3. Inspect framework/runtime peripheral ownership before assigning DMA,
    hardware timers, PIO, or other resources to future backends.
-4. Before WS2812 implementation, establish the actual panel's power, thermal,
-   electrical timing, mapping, buffer, PIO, and DMA requirements. Keep all such
-   values marked planned until measured or build-derived.
+4. Verify the logical row/column scans, confirm the PIO waveform and electrical
+   levels, and establish power/thermal behavior before final WS2812 rendering.
+   Current and signal-integrity limits remain unmeasured.
 5. Verify physical GPS PPS/RMC timing and complete Stage 2C.2 fault-injection
    checks before recording those behaviors as physically qualified. Stage
    2C.1 console verification is complete per current project status.
@@ -334,3 +414,10 @@ No resource figures in this section are firmware build measurements.
 | 2026-10-09 | First resource baseline; Stage 2C.1 development-console working-tree state | Flash 46,624 B; static SRAM including vector table 11,532 B | Flash 49,640 B; static SRAM including vector table 12,116 B | Both builds and host suite passed. Console remains unverified on physical Pico 2. No prior baseline or historical resource delta exists. |
 | 2026-10-10 | Stage 2C.2 development-only simulated GPS/PPS fault injection | Flash 46,624 B (Δ 0); static SRAM 11,532 B (Δ 0) | Flash 51,648 B (Δ +2,008); static SRAM including vector table 12,132 B (Δ +16) | Both builds and host fault/regression suite passed. No GPIO/peripheral assignment changes. Physical Pico 2 fault-injection verification is **PENDING**. |
 | 2026-10-10 | Compile-time display framework and default STDOUT | Flash 44,888 B (Δ −1,736); `.data + .bss` 11,312 B; static SRAM including vector table 11,584 B (Δ +52) | Flash 46,520 B (Δ −5,128); `.data + .bss` 11,632 B; static SRAM including vector table 11,904 B (Δ −228) | Build-derived from default STDOUT profiles. Removed default VFD-linked code and VFD buffers; exact per-driver deltas are not isolated. One-off `pico2` VFD-only build: 46,664 B flash / 11,268 B `.data + .bss` / 11,540 B including vector table. One-off STDOUT+VFD build: 46,672 B / 11,400 B / 11,672 B including vector table. Host regression suite and both default builds passed; no physical verification. |
+| 2026-10-11 | WS2812 PIO bring-up driver and raw-index development renderer | `pico2`: 44,888 B flash / 11,312 B `.data + .bss`; `pico2-dev`: 46,520 B / 11,632 B; default values match display-framework milestone | `pico2-dev-ws2812`: 47,532 B flash; 12,312 B `.data + .bss`; 12,584 B including vector table | Selected build owns GP8; PIO0 SM0, instruction offset 0 and four instruction words; no DMA or interrupt; 768-byte RGB framebuffer and 8-byte PIO instruction image. Dev bring-up is bounded to eight FIFO words per service and a 1 ms post-write latch interval. Raw-index chase was subsequently physically verified; exact mapping and instrumented waveform/electrical measurements remain unavailable. |
+| 2026-10-11 | Logical 32x8 mapping and full demo | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 49,176 B flash (Δ +1,644); 12,320 B `.data + .bss` (Δ +8); 12,592 B including vector table (Δ +8) | WS2812 `display` object is 800 B (768-byte framebuffer + 32-byte state); PIO image remains 8 B. GP8, PIO0 SM0/four instruction words unchanged; no DMA, interrupts, or extra GPIO. Defaults have no WS2812 framebuffer or PIO allocation (confirmed by default ELF symbols). The user reports raw-chase response; logical mapping remains provisional pending corner/perimeter observation. |
+| 2026-10-11 | Restored first physically working raw bring-up behavior | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 47,396 B flash; 12,312 B `.data + .bss`; 12,584 B including vector table | Build-derived restored profile; 1,780 B less flash and 8 B less `.data + .bss` than the removed full-demo profile. 792-byte display object contains the fixed 768-byte RGB buffer and state; PIO instruction image is 8 B. Default ELF symbol inspection finds no WS2812 driver/PIO symbols. GP8, PIO0 SM0, four instruction words, no DMA/interrupt remain the selected resource contract. The user subsequently physically verified that simple image. |
+| 2026-10-11 | Provisional logical map and four-corner proof | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 47,532 B flash (Δ +136); 12,312 B `.data + .bss` (Δ 0); 12,584 B including vector table (Δ 0) | Build-derived. Added the bounds-checked logical 32x8 helper and four individually held corner frames; framebuffer and driver object size remain unchanged. Transport/resource ownership unchanged. Default ELFs contain no WS2812/PIO symbols. Corner mapping is not physically verified. |
+| 2026-10-11 | Correct logical topology to observed vertical serpentine columns | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 47,524 B flash (Δ -8); 12,312 B `.data + .bss` (Δ 0); 12,584 B including vector table (Δ 0) | Build-derived. Corrected only the logical-to-raw mapping helper and its focused tests/docs. The 768-byte framebuffer, GP8, PIO0 SM0/four instruction words, DMA/interrupt use, and raw chase are unchanged. Default ELFs remain free of linked WS2812/PIO resources. Physical topology is established from the observed raw chase; corrected corner frames await re-verification. |
+| 2026-10-11 | Logical perimeter trace | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 47,828 B flash (Δ +304); 12,312 B `.data + .bss` (Δ 0); 12,584 B including vector table (Δ 0) | Build-derived. Added a bounds-checked 76-step perimeter coordinate helper and one-lap demo state using the existing pixel-index storage. Verified mapping, transport, GP8/PIO0 SM0 ownership, framebuffer, and raw chase are unchanged. Default ELFs contain no linked WS2812/PIO resources. Perimeter awaited physical verification at this measurement milestone; user subsequently confirmed it. |
+| 2026-10-11 | Logical row and column scans | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 48,076 B flash (Δ +248); 12,312 B `.data + .bss` (Δ 0); 12,584 B including vector table (Δ 0) | Build-derived. Added bounded 32-pixel row frames held 500 ms and 8-pixel column frames held 150 ms, reusing the existing framebuffer and pixel index. Mapping, PIO/transport, ownership, and raw chase are unchanged. Default ELFs have no linked WS2812/PIO symbols. Scans await physical verification. |

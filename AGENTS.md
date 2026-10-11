@@ -57,7 +57,7 @@ physical verification.
 ## Display architecture
 
 - Compile-time display selection uses `AAC_DISPLAY_STDOUT`, `AAC_DISPLAY_VFD`,
-  and future driver flags. With no explicit selection the application selects
+  and `AAC_DISPLAY_WS2812`. With no explicit selection the application selects
   STDOUT. Explicit physical drivers do not add STDOUT unless its flag is also
   selected. No runtime discovery or plugin loading is used.
 - Keep presentation state device-independent and read-only to display code.
@@ -77,16 +77,18 @@ physical verification.
   the Pico GPIO contract. No default consumer build initializes UART1 or
   assumes MAX3232 hardware.
 - Dad's selected display is the **WS2812 8x32 Panel**, one 8-row by 32-column
-  matrix with 256 RGB pixels. Its driver is not implemented. Planned DATA is
-  GP8 (Pico 2 physical pin 11) through an SN74HCT541N at 5 V and approximately
-  330-ohm series resistance, with local bypass and shared ground. These
-  electrical details remain unqualified; do not invent pixel order or power
+  matrix with 256 RGB pixels. Its optional PIO driver is implemented and owns
+  GP8 (Pico 2 physical pin 11) only when selected. The external SN74HCT541N
+  level shifter and approximately 330-ohm series resistor feed panel DIN; the
+  panel uses a separate regulated 5 V development supply and shared ground.
+  Electrical behavior remains unqualified. Do not invent pixel order or power
   limits.
 - Do not allocate GP8, PIO, DMA, a pixel framebuffer, or configure panel
-  hardware until its driver is authorized and implemented.
-- Do not invent matrix serpentine mapping, connector orientation, pixel order,
-  measured current, or final power limits. Keep experimentally verified device
-  behavior distinct from behavior inferred from manuals.
+  hardware in builds that do not select its driver.
+- WS2812 logical coordinates follow the physically observed topology: raw
+  index 0 is top-left; columns progress left-to-right; even columns traverse
+  top-to-bottom and odd columns bottom-to-top. Do not invent measured current
+  or final power limits.
 - Backends own their hardware. Display initialization must not configure
   unrelated hardware, and slow display operations must not block authoritative
   timing. The backend contract must not require every display to support RGB,
@@ -95,13 +97,24 @@ physical verification.
   framework. Each selected driver receives one shared presentation snapshot;
   scheduling remains cooperative and drivers must keep each service call
   bounded. Do not add dynamic registries or heap allocation.
+- The WS2812 driver owns a fixed 768-byte framebuffer and PIO0 SM0 only in
+  selected builds. Development shows dim RGB fills, a four-corner logical
+  proof, a one-lap logical perimeter trace, row/column scans, then a raw 0..255
+  pixel chase. The raw transport/chase, vertical serpentine column topology,
+  four-corner proof, and perimeter trace were physically verified; row/column
+  scans await physical verification. No higher-level effects are implemented.
+  Brightness is not a current limiter.
+- Future status indication uses a separate chain of approximately 3–4 WS2812
+  LEDs on its own data GPIO and separate driver/module. Do not append them to
+  the 256-pixel panel chain or assign/reserve their GPIO before implementation.
+  PIO0 SM1 is a preferred future option only if available; it is not reserved.
 
 ## Hardware ownership
 
 - GPIO assignments are centralized in `include/pins.hpp`. GPS UART0 uses
   GP0/GP1 and GPS PPS uses GP2 in production. GP4 is optional VFD UART1 TX;
-  GP5 is unassigned and available. GP8 is planned for WS2812 DATA and remains
-  uninitialized.
+  GP5 is unassigned and available. GP8 is WS2812 DATA only when its driver is
+  selected; default builds leave it uninitialized.
 - Inspect the pin map and owning module before changing assignments. Do not
   treat planned pins or platform-capable peripherals as active allocations.
 

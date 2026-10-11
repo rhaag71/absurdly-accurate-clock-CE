@@ -24,7 +24,9 @@ selection, and display selection. Both profiles use the same authoritative
 timebase. Production selects physical GPS/PPS; development selects simulated
 GPS/PPS. Both default to the bounded USB CDC STDOUT display. The optional
 PD-2200 driver can be selected explicitly. The selected consumer WS2812 8x32
-Panel driver remains unimplemented.
+Panel has an optional PIO driver; its raw topology, logical corner rendering,
+and perimeter trace are physically established. The new row and column scans
+await physical verification; final clock rendering remains future work.
 
 ## Repository evidence: current implementation
 
@@ -36,12 +38,12 @@ Panel driver remains unimplemented.
 | Inherited timebase loss behavior | **Implemented in inherited AAC firmware** | On loss of qualification UTC becomes invalid; source inspection shows no oscillator extrapolation or prolonged holdover. A briefly fresh PPS after the last RMC is not holdover. |
 | Display framework and STDOUT | **Implemented specifically for CE** | `display_selection.hpp` defaults to STDOUT only when no driver is named; explicit selections compose only those drivers. STDOUT uses a bounded USB CDC line and is quiet during development console mode. |
 | Optional PD-2200 driver | **Implemented in inherited AAC firmware; optional in CE** | Explicit VFD selection includes the presentation adapter and verified PD-2200 command driver. It uses UART1 TX on GP4 / physical pin 6 only; RX is disabled and GP5 remains available. MAX3232 labeling and DB9 wiring quirks are external hardware details. The physical display is not the selected consumer hardware. |
-| Selected consumer display | **Selected design / approved requirement** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Its GP8 DATA interface and PIO driver are planned only; no panel driver or physical panel verification exists. |
+| Selected consumer display | **Implemented bring-up driver; row/column proof pending** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Selected builds own GP8 and one PIO0 state machine. Raw RGB fills/chase, vertical serpentine column topology, four-corner proof, and perimeter trace were physically verified. Logical row and column scans await physical verification. |
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
 | Compile-time production/development profiles and GPS source selection | **Implemented specifically for CE** | Production compiles real UART/PPS; development compiles simulated input, console, and fault injection. Both compile the same display-selection mechanism, defaulting to STDOUT. |
-| Display framework | **Implemented specifically for CE** | Static compile-time composition passes one coherent snapshot to each selected driver. No runtime plugin registry is present. WS2812 is not yet selectable as an implemented driver. |
+| Display framework | **Implemented specifically for CE** | Static compile-time composition passes one coherent snapshot to each selected driver. No runtime plugin registry is present. WS2812 is independently selectable and composes with STDOUT and/or VFD. |
 
 ## CE engineering decisions and requirements
 
@@ -57,19 +59,21 @@ The current source still determines what is implemented.
 | NEO-7 GPS on UART0 plus separate PPS | **Selected design / approved requirement** | GP0/GP1 UART0 and GP2 PPS match current inherited assignments. The exact receiver configuration and PPS-to-RMC absolute relationship remain subject to receiver-specific confirmation. |
 | Standalone clock; no Wi-Fi or AAC-Bridge | **Selected design / approved requirement** | Dad's selected build has no Wi-Fi, AAC-Bridge, or physical UI button. Stage 1 removes active Bridge and button support from CE. |
 | Compile-time display framework | **Implemented specifically for CE** | `display_selection.hpp` selects STDOUT by default, or exactly the explicitly named driver set. `display_framework::Framework` passes the same read-only snapshot to each selected driver. |
-| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / approved requirement** | One panel is selected for Dad's build. No panel driver or physical panel is present. |
-| RP2350 PIO drives WS2812B data | **Selected design / approved requirement** | Intended output mechanism. No PIO LED implementation is present. |
-| 74HCT541 5 V level shifter and approximately 330 Ω series resistor | **Selected design / approved requirement** | Electrical interface direction. Values, placement, supply/ground details, signal integrity, and actual panel compatibility require schematic review and bench testing before hardware claims. |
-| GP8 proposed for WS2812B data | **Proposed but not finalized** | Not implemented and not physically tested. Stage 1 removes its inherited SPI assignment. This does not constitute WS2812 support or validate the pin choice. |
-| Logical framebuffer independent of physical LED ordering | **Selected design / approved requirement** | Application drawing coordinates should not encode panel-specific serpentine/order mapping. Physical mapping belongs in a replaceable backend/configuration layer. No such framebuffer exists yet. |
+| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / implemented bring-up driver** | One panel is selected. The development bring-up sends low-level colors, geometry scans, and raw wire-order pixels; final clock rendering remains future work. |
+| RP2350 PIO drives WS2812B data | **Implemented; physical waveform unverified** | Selected builds use PIO0 SM0 and a four-instruction program fixed at instruction offset 0. Initialization fails closed if SM0 is already claimed. No DMA is used. |
+| HCT541 level shifting and WS2812 development power | **Wired contract; physical behavior unverified** | GP8 / physical pin 11 drives the already wired SN74HCT541N and approximately 330 Ω series path to panel DIN. The panel is powered by a separate regulated 5 V supply during development, with shared ground. Waveform integrity, current, and thermal behavior remain unmeasured. |
+| GP8 for WS2812B data | **Implemented assignment; physical behavior unverified** | Selected WS2812 builds initialize GP8 through PIO. Default builds leave it untouched. It connects through the external HCT541 buffer to panel DIN. |
+| Raw-index framebuffer independent of physical LED ordering | **Implemented driver storage** | A fixed 256-entry RGB buffer (768 bytes) serializes raw indices in increasing order. Logical coordinates use the physically established top-left-start vertical serpentine column mapping documented below. |
 | Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before connecting real GPS. Display animation and theme demonstrations remain future Stage 2C work. |
 | Fonts, animations, overlays, calendar, special-day themes | **Selected design / approved requirement** | Intended presentation capabilities. Exact content, schedule, rendering resource limits, and precedence are not specified by the repository and remain to be designed. |
 | Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C.1 console controls and Stage 2C.2 receiver fault injection are implemented; acquisition/recovery demonstrations and calendar/theme scenarios remain future work. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After initial qualified GPS/PPS lock, local crystal-derived UTC may be estimated in HOLDOVER for at most 24 hours from the last qualified reference. Requalify through normal rules before LOCKED; expire to UNSYNCED at the limit. This is not implemented in inherited firmware, which invalidates UTC on reference loss. Accuracy is uncharacterized and is not GPS-verified. |
 | Conservative brightness and current limiting | **Selected design / approved requirement** | Display must constrain brightness/current for a household appliance. No CE brightness control, power budget, or current limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
 | Prototype light-well grid, diffuser, enclosure | **Proposed but not finalized** | Mechanical/optical development direction. Pitch, depth, divider geometry, diffuser, materials, ventilation, and enclosure dimensions are not specified or physically evaluated in this repository. |
-| Optional three WS2812 status pixels | **Proposed but not finalized** | Up to three optional pixels may be chained after the matrix. Their use and meanings are not fixed. |
-| Timing-quality status pixel | **Selected design / approved requirement** | One of the optional three chained pixels is designated to distinguish LOCKED, HOLDOVER, and UNSYNCED. Colors/effects are open; no LED code exists and no additional Pico GPIO is needed. Effects must not imply live PPS during HOLDOVER. |
+| Separate WS2812 status chain | **Approved architecture; driver not implemented** | Approximately 3–4 discrete LEDs form a separate electrical chain and logical device, never appended to the 256-pixel main panel. The future status driver will own their count, meanings/colors, data GPIO, and update cadence. |
+| Status data path | **Planned hardware direction; GPIO unassigned** | Pico GPIO TBD → spare SN74HCT541N channel → separate approximately 330 Ω series resistor → approximately 3–4 WS2812 LEDs. No Pico GPIO is assigned or reserved before driver implementation. |
+| Status PIO | **Preferred future option; unallocated** | The panel uses PIO0 SM0. A status driver may use PIO0 SM1 if available and may share the loaded four-instruction WS2812 program. SM1 is not currently allocated or reserved. |
+| Timing-quality status indication | **Selected design / approved requirement** | A status indicator is intended to distinguish LOCKED, HOLDOVER, and UNSYNCED. Colors/effects remain open; no status LED code exists. It must not imply live PPS during HOLDOVER. |
 | Animation style | **Proposed but not finalized** | Fades, dissolves, decays, color transitions, and rolling effects are candidates for early testing; no style is selected. |
 | USB serial diagnostics | **Selected design / approved requirement** | Preserve a service/debug path for GPS/time quality, watchdog and fault diagnosis. Inherited USB diagnostics exist; CE message set/rate and field accessibility are not finalized. |
 | Watchdog | **Selected design / approved requirement** | CE requires recovery from firmware stalls. Inherited RP2350 watchdog exists; the CE service boundary and physical recovery test must be confirmed on the target build. |
@@ -166,8 +170,36 @@ tests pass; physical Pico 2 verification remains pending.
 containing clock quality/time, pulse phase data, and selected civil zone. The
 main loop derives it from clock state and passes the same const snapshot to a
 static compile-time composition. The generic framework has no device protocol
-or hardware behavior. STDOUT and the optional PD-2200 driver are implemented;
-the WS2812 driver is not.
+or hardware behavior. STDOUT, the optional PD-2200 driver, and the optional
+WS2812 PIO driver are implemented. The WS2812 development sequence is a
+bring-up renderer; production clock typography/layout awaits later development
+after physical verification of the row and column scans.
+
+The selected WS2812 driver keeps a 256-entry static RGB buffer with raw access
+and a logical 32x8 helper. Physical observation established raw index 0 at
+top-left, left-to-right column progression, and alternating vertical column
+traversal (first column top-to-bottom). The raw 0..255 chase and basic RGB
+transport and the four-corner proof were physically verified. The development
+sequence starts dark, shows dim red/green/blue fills, returns dark, presents
+the four logical corners individually, returns dark, traces all 76 logical
+border pixels clockwise once with one dim pixel, returns dark, scans rows 0–7
+for 500 ms each and columns 0–31 for 150 ms each, then returns dark and
+repeatedly chases one dim white pixel through raw indices 0..255. The existing
+geometry proofs are physically verified; row/column scans await physical
+verification. Component level is 8/255, not a current limiter.
+The user observed some red coloration during the blue fill; this is recorded
+without investigation. No higher-level effect or clock layout has been added.
+
+The approximately 3–4 status LEDs are separate from the main 256-pixel chain.
+The main panel driver owns its 32x8 geometry, framebuffer/rendering,
+presentation, and panel themes/animations. A separate status driver will own
+its small LED count, status meanings/colors, data GPIO, and update cadence; the
+drivers do not depend on each other. They may share low-level WS2812 PIO
+transport code. The spare HCT541 channel and separate series resistor are the
+intended electrical path. GPIO selection and PIO0 SM1 use remain unallocated
+until implementation; SM1 is only preferred if available. This separation
+keeps the panel at exactly 256 pixels and prevents panel-chain faults or
+updates from coupling status indication to panel geometry/rendering.
 
 The architecture is intended to accommodate the selected WS2812 RGB matrix,
 MAX7219 monochrome matrices, MAX7219 seven-segment modules, SPI TFT LCDs,
@@ -195,8 +227,9 @@ Static selection of multiple drivers is implemented. The current framework
 services each selected driver in order once per loop and does not route
 different fields to different backends. Drivers must keep each service bounded;
 independent asynchronous cadence and output state belong to each driver. The
-selected consumer hardware remains one WS2812 8x32 Panel, whose driver is not
-implemented.
+selected consumer hardware remains one WS2812 8x32 Panel; its low-level driver
+and mapping for the observed topology are implemented while final clock
+rendering awaits physical verification.
 
 To add a backend later, implement a concrete type with `begin(const
 presentation::State&)` and `service(const presentation::State&)`;
@@ -227,13 +260,16 @@ transport boundary from verified target documentation/tests.
 
 ## Remaining selected-build facts and limits
 
-- Dad's build uses one WS2812B 8×32 RGB matrix. Up to three extra WS2812 status
-  pixels may be chained after it; one is designated for timing quality. Exact
-  colors/effects remain open. These pixels share the serial chain and need no
-  extra Pico GPIO. No status-pixel driver is implemented.
-- The 74HCT541 / approximately 330 Ω data path remains a selected electrical
-  direction. GP8 is proposed for data only; it is not assigned in firmware or
-  physically tested. Its former SPI assignment was removed with Bridge support.
+- Dad's build uses one WS2812B 8×32 RGB matrix. Approximately 3–4 WS2812 status
+  LEDs are a separate chain with a separate data GPIO, not appended to the
+  matrix. They use a spare HCT541 channel and separate approximately 330 Ω
+  resistor. No GPIO is assigned/reserved and no status driver is implemented.
+- The main panel uses GP8 through its SN74HCT541 channel and approximately
+  330 Ω data resistor. The separate status path's GPIO remains TBD.
+  GP8 is assigned by the selected driver and remains untouched in default
+  builds. The panel uses a separate regulated 5 V development supply and a
+  shared ground. Signal integrity is unmeasured; physical pixel topology is
+  established as top-left-start vertical serpentine columns.
 - The provisional system power target is 5 V / 2 A. Actual panel current,
   brightness limiting, temperature, level shifting, and power margin need
   measured verification. Do not treat the target as measured consumption.

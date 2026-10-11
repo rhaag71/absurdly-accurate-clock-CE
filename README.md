@@ -30,8 +30,15 @@ The CE build currently defaults to UTC and has no physical UI button. Timezone
 conversion remains presentation-only and supports the inherited U.S. zones; see
 [timezone notes](docs/display-timezone.md). Dad's selected consumer hardware is
 the **WS2812 8x32 Panel**: one 8-row by 32-column panel with 256 RGB pixels. Its
-driver is not implemented yet. See the [CE engineering baseline](docs/ce-engineering-baseline.md)
-for hardware status and resource ownership.
+optional PIO driver uses GP8 when selected. The raw 0..255 chase was physically
+verified and established the panel topology: raw index 0 is top-left, with
+columns progressing left-to-right and alternating top-to-bottom / bottom-to-top
+traversal. The compile-time logical map now follows that vertical serpentine
+column order. The four-corner proof and clockwise perimeter trace are
+physically verified. Logical row and column scans are implemented and await
+physical verification; no higher-level effects are implemented. See the
+[CE engineering baseline](docs/ce-engineering-baseline.md) for status and
+resource ownership.
 
 ## Layout and architecture
 
@@ -54,12 +61,23 @@ stays UTC; local-time conversion belongs at the display boundary. See
 [timebase contract](docs/pps-timebase.md) for association and validity behavior.
 
 If no display macro is selected, `display_selection.hpp` defaults to STDOUT.
-Explicit physical drivers do not implicitly include STDOUT; selecting both
-`AAC_DISPLAY_STDOUT` and `AAC_DISPLAY_VFD` composes both. `AAC_DISPLAY_VFD` is
-optional and preserves the existing PD-2200 implementation. Selection is
+Explicit physical drivers do not implicitly include STDOUT. Set any desired
+combination of `AAC_DISPLAY_STDOUT`, `AAC_DISPLAY_VFD`, and
+`AAC_DISPLAY_WS2812`; `AAC_DISPLAY_VFD` preserves the optional PD-2200
+implementation. Selection is
 compile-time only. Drivers receive the same `presentation::State`, own their
 rendering and hardware, and must make bounded nonblocking progress. The
 authoritative UTC engine has no display-driver dependency.
+
+Build and upload the optional development panel bring-up with
+`pio run -e pico2-dev-ws2812 -t upload`. The build uses GP8 and PIO0 SM0. The
+driver sends dim RGB fills, a dark interval, four logical corners one at a time,
+a dark interval, one dim pixel tracing the logical perimeter for one lap, a dark
+interval, logical rows 0–7 and columns 0–31, a dark interval, then one dim white
+LED chasing raw indices 0..255 repeatedly. The raw chase, four-corner proof,
+and perimeter trace are physically verified. Host tests cover raw pixel
+storage, mapping, perimeter, and row/column frames; they do not verify
+electrical panel timing or the new scans.
 
 When explicitly selected, the PD-2200 operates in **Noritake serial command mode**, configured for 9600
 baud, 8N1. For the verified PD-2200, command `0x0E` clears displayed characters
@@ -71,9 +89,23 @@ workarounds, and from physical UART1/RS-232 transport through the MAX3232.
 Default `pico2` and `pico2-dev` builds use STDOUT and do not initialize UART1,
 GP4, or GP5 for the VFD. The optional VFD driver initializes UART1 TX on GP4
 (physical pin 6) only when selected; RX is disabled and GP5 remains available.
-The planned WS2812 data connection is GP8
-(Pico 2 physical pin 11) through an SN74HCT541N. GP8 is not initialized, and no
-panel driver, PIO, DMA, or pixel framebuffer is present.
+The optional WS2812 driver owns GP8 (Pico 2 physical pin 11) only when selected.
+The data path uses the SN74HCT541N level shifter and approximately 330-ohm
+series resistor; development powers the panel from a separate regulated 5 V
+supply with shared ground. The driver uses PIO and no DMA. Its logical mapping
+matches the physically observed top-left-start vertical serpentine columns;
+the four-corner proof and perimeter trace are physically verified. Row and
+column scans are implemented but await physical verification. Brightness is
+fixed low for bring-up and is not a current limiter.
+
+The approximately 3–4 WS2812 status LEDs are a separate logical and electrical
+device, not pixels 256 onward in the panel chain. Their future data path uses
+an as-yet-unassigned Pico GPIO, a spare SN74HCT541 channel, and its own
+approximately 330-ohm series resistor. A separate status driver will own their
+count, meanings/colors, GPIO, and update cadence; it may share a low-level PIO
+transport with the panel. PIO0 SM1 is preferred only if available when that
+driver is implemented. No status GPIO or PIO state machine is currently
+assigned or reserved.
 
 ## Unattended recovery
 
@@ -150,7 +182,7 @@ input/output directions are relative to the Pico.
 | GP4 | PD-2200 UART1 TX (`Serial2`) via MAX3232, only when VFD is selected |
 | GP5 | Unassigned and available |
 | GP6–GP7 | Unassigned |
-| GP8 | Proposed WS2812 data output; not implemented or physically tested |
+| GP8 | WS2812 data output, allocated only when that driver is selected |
 | GP9–GP22 | Unassigned |
 
 GP3 is also unassigned. UART0 GPS and UART1 display currently use **9600 baud,

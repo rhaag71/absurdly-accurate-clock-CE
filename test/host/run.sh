@@ -68,9 +68,27 @@ c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_STDOUT -DAAC_DISPLAY_VFD \
     -I test/host/stubs -I include test/host/display_selection_test.cpp \
     -o "$test_dir/display_selection_both"
 "$test_dir/display_selection_both"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_WS2812 -I test/host/stubs -I include \
+    test/host/display_selection_test.cpp -o "$test_dir/display_selection_ws2812"
+"$test_dir/display_selection_ws2812"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_STDOUT -DAAC_DISPLAY_WS2812 \
+    -I test/host/stubs -I include test/host/display_selection_test.cpp \
+    -o "$test_dir/display_selection_stdout_ws2812"
+"$test_dir/display_selection_stdout_ws2812"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_VFD -DAAC_DISPLAY_WS2812 \
+    -I test/host/stubs -I include test/host/display_selection_test.cpp \
+    -o "$test_dir/display_selection_vfd_ws2812"
+"$test_dir/display_selection_vfd_ws2812"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_STDOUT -DAAC_DISPLAY_VFD -DAAC_DISPLAY_WS2812 \
+    -I test/host/stubs -I include test/host/display_selection_test.cpp \
+    -o "$test_dir/display_selection_all"
+"$test_dir/display_selection_all"
 c++ -std=c++11 -Wall -Wextra -Werror -I include src/clock_state.cpp src/display_time.cpp \
     src/stdout_display.cpp test/host/stdout_display_test.cpp -o "$test_dir/stdout_display"
 "$test_dir/stdout_display"
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/display_framework_test.cpp -o "$test_dir/display_framework"
 "$test_dir/display_framework"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/ws2812_pixels_test.cpp -o "$test_dir/ws2812_pixels"
+"$test_dir/ws2812_pixels"
