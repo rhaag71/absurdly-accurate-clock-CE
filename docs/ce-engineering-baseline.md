@@ -25,9 +25,16 @@ timebase. Production selects physical GPS/PPS; development selects simulated
 GPS/PPS. Both default to the bounded USB CDC STDOUT display. The optional
 PD-2200 driver can be selected explicitly. The selected consumer WS2812 8x32
 Panel has an optional PIO driver; its raw topology, logical geometry proofs,
-and temporary 5x7 glyph rendering are physically established. Its normal
-development runtime now displays presentation-state `HH:MM` using the existing
-simulated GPS/PPS and civil-time path.
+temporary 5x7 font, full-height 6x8 font, and continuous `HH:MM` mode are
+physically established. The 6x8 candidate was judged too large for the desired
+product and future effect space. The first compact candidate was physically
+judged visually unattractive despite its useful spacing. The normal
+development runtime now uses the conventional 4x6 compact clock font with
+plain unslashed zero; it awaits physical evaluation. Its six glyph rows are
+drawn at y=1..6, leaving row 7 unused. Effects should decorate around the
+readable glyph mask rather than shape or replace the typography. A
+development-only console command sets temporary logical RGB before global
+brightness.
 
 ## Repository evidence: current implementation
 
@@ -39,7 +46,7 @@ simulated GPS/PPS and civil-time path.
 | Inherited timebase loss behavior | **Implemented in inherited AAC firmware** | On loss of qualification UTC becomes invalid; source inspection shows no oscillator extrapolation or prolonged holdover. A briefly fresh PPS after the last RMC is not holdover. |
 | Display framework and STDOUT | **Implemented specifically for CE** | `display_selection.hpp` defaults to STDOUT only when no driver is named; explicit selections compose only those drivers. STDOUT uses a bounded USB CDC line and is quiet during development console mode. |
 | Optional PD-2200 driver | **Implemented in inherited AAC firmware; optional in CE** | Explicit VFD selection includes the presentation adapter and verified PD-2200 command driver. It uses UART1 TX on GP4 / physical pin 6 only; RX is disabled and GP5 remains available. MAX3232 labeling and DB9 wiring quirks are external hardware details. The physical display is not the selected consumer hardware. |
-| Selected consumer display | **Implemented; clock-mode behavior physically verified by user** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Selected builds own GP8 and one PIO0 state machine. Raw RGB transport, vertical serpentine topology, corners, perimeter, rows/columns, temporary 5x7 glyph rendering, and live presentation-state `HH:MM` clock mode were physically verified. Global brightness software control is implemented at serialization; its user tuning remains unverified. |
+| Selected consumer display | **Implemented; compact font awaits physical evaluation** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Selected builds own GP8 and one PIO0 state machine. Raw RGB transport, vertical serpentine topology, geometry proofs, both prior font candidates, and live presentation-state `HH:MM` clock mode were physically verified. The 6x8 candidate was judged too large; the compact variable-width candidate awaits physical evaluation. Global brightness and development logical-color control are implemented. |
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
@@ -60,13 +67,15 @@ The current source still determines what is implemented.
 | NEO-7 GPS on UART0 plus separate PPS | **Selected design / approved requirement** | GP0/GP1 UART0 and GP2 PPS match current inherited assignments. The exact receiver configuration and PPS-to-RMC absolute relationship remain subject to receiver-specific confirmation. |
 | Standalone clock; no Wi-Fi or AAC-Bridge | **Selected design / approved requirement** | Dad's selected build has no Wi-Fi, AAC-Bridge, or physical UI button. Stage 1 removes active Bridge and button support from CE. |
 | Compile-time display framework | **Implemented specifically for CE** | `display_selection.hpp` selects STDOUT by default, or exactly the explicitly named driver set. `display_framework::Framework` passes the same read-only snapshot to each selected driver. |
-| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / implemented clock driver** | One panel is selected. The development runtime uses the existing presentation state and temporary 5x7 font for `HH:MM`; clock behavior is physically verified, while brightness tuning is pending. |
+| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / implemented clock driver** | One panel is selected. The development runtime uses the existing presentation state and new conventional 4x6 compact clock font for `HH:MM`. Clock mode and prior fonts were physically evaluated; the 6x8 candidate was judged too large, and the first compact candidate visually unattractive. The active font awaits physical evaluation; its six rows use y=1..6, leaving row 7 unused. |
 | RP2350 PIO drives WS2812B data | **Implemented; physical waveform unverified** | Selected builds use PIO0 SM0 and a four-instruction program fixed at instruction offset 0. Initialization fails closed if SM0 is already claimed. No DMA is used. |
 | HCT541 level shifting and WS2812 development power | **Wired contract; physical behavior unverified** | GP8 / physical pin 11 drives the already wired SN74HCT541N and approximately 330 Ω series path to panel DIN. The panel is powered by a separate regulated 5 V supply during development, with shared ground. Waveform integrity, current, and thermal behavior remain unmeasured. |
 | GP8 for WS2812B data | **Implemented assignment; physical behavior unverified** | Selected WS2812 builds initialize GP8 through PIO. Default builds leave it untouched. It connects through the external HCT541 buffer to panel DIN. |
 | Raw-index framebuffer independent of physical LED ordering | **Implemented driver storage** | A fixed 256-entry RGB buffer (768 bytes) serializes raw indices in increasing order. Logical coordinates use the physically established top-left-start vertical serpentine column mapping documented below. |
 | Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before display composition. The WS2812 clock consumes the resulting shared presentation snapshot. |
-| Fonts, animations, overlays, calendar, special-day themes | **5x7 clock renderer implemented; later design future** | The temporary 5x7 digits/colon render presentation-state `HH:MM` in the WS2812 development profile. Final time glyphs may use more of the 8-pixel height, likely custom ~6x8 or variable-width digits; day-of-month bottom-row color overlay and digit-change transitions (dissolve, scroll, wipe, swirl, or similar) remain future work. |
+| Clock fonts, animations, overlays, calendar, special-day themes | **Compact conventional candidate implemented; physical approval pending** | The physically verified 5x7 bring-up font and full-height 6x8 candidate remain available as references, as do earlier compact candidates. The 6x8 candidate was judged too large and the first compact candidate visually unattractive. The active development clock uses a conventional 4x6 font with plain unslashed zero; glyphs render on y=1..6 and leave row 7 unused. Effects should decorate around the glyph mask without shaping or replacing the numerals. Physical font approval remains open. |
+| Time formatting and centered layout | **Actual-width centering and unpadded 12-hour formatting implemented** | Format civil time first, measure the active font's actual rendered width, then center every draw on 32 columns using `x = (32 - rendered_width) / 2` with deterministic integer placement. 12-hour presentation omits the leading zero; 24-hour presentation retains two hour digits. The selected build is currently 24-hour. See [Consumer Edition Requirements, Section 5](Consumer-Edition-Requirements#5-12--24-hour-display). |
+| Development clock color | **Implemented for WS2812 development** | Console `color` reports the current logical RGB; `color <r> <g> <b>` sets non-persistent 0..255 channels. Default is `(255, 96, 0)`. A color-generation change redraws/retransmits the current text before the unchanged global-brightness output stage. No palette, theme, gamma, or current-limit behavior is included. |
 | Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C.1 console controls and Stage 2C.2 receiver fault injection are implemented; acquisition/recovery demonstrations and calendar/theme scenarios remain future work. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After initial qualified GPS/PPS lock, local crystal-derived UTC may be estimated in HOLDOVER for at most 24 hours from the last qualified reference. Requalify through normal rules before LOCKED; expire to UNSYNCED at the limit. This is not implemented in inherited firmware, which invalidates UTC on reference loss. Accuracy is uncharacterized and is not GPS-verified. |
 | Conservative brightness and current limiting | **Brightness implemented; limiter future** | WS2812 development brightness is a software appearance control, range 0..255, default 8. It is not a current limiter and is not physically tuned. No current budget or limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
@@ -75,7 +84,7 @@ The current source still determines what is implemented.
 | Status data path | **Planned hardware direction; GPIO unassigned** | Pico GPIO TBD → spare SN74HCT541N channel → separate approximately 330 Ω series resistor → approximately 3–4 WS2812 LEDs. No Pico GPIO is assigned or reserved before driver implementation. |
 | Status PIO | **Preferred future option; unallocated** | The panel uses PIO0 SM0. A status driver may use PIO0 SM1 if available and may share the loaded four-instruction WS2812 program. SM1 is not currently allocated or reserved. |
 | Timing-quality status indication | **Selected design / approved requirement** | A status indicator is intended to distinguish LOCKED, HOLDOVER, and UNSYNCED. Colors/effects remain open; no status LED code exists. It must not imply live PPS during HOLDOVER. |
-| Animation style | **Proposed but not finalized** | Fades, dissolves, decays, color transitions, and rolling effects are candidates for early testing; no style is selected. |
+| Animation style | **Recenter behavior approved; general style not finalized** | A subtle presentation-only recenter animation may run when a new measured layout has a different target origin; no movement is needed when the target origin is unchanged. It cannot delay or affect the new displayed time or authoritative UTC. Other fades, dissolves, decays, color transitions, and rolling effects remain candidates without a selected style. See [Consumer Edition Requirements, Section 8](Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects). |
 | USB serial diagnostics | **Selected design / approved requirement** | Preserve a service/debug path for GPS/time quality, watchdog and fault diagnosis. Inherited USB diagnostics exist; CE message set/rate and field accessibility are not finalized. |
 | Watchdog | **Selected design / approved requirement** | CE requires recovery from firmware stalls. Inherited RP2350 watchdog exists; the CE service boundary and physical recovery test must be confirmed on the target build. |
 
@@ -173,26 +182,36 @@ main loop derives it from clock state and passes the same const snapshot to a
 static compile-time composition. The generic framework has no device protocol
 or hardware behavior. STDOUT, the optional PD-2200 driver, and the optional
 WS2812 PIO driver are implemented. The WS2812 development runtime converts the
-snapshot through the existing civil-time function and renders `HH:MM` with the
-temporary numeric font. Its clock-mode behavior is physically verified by the
-user.
+snapshot through the existing civil-time function and renders the conventional
+4x6 compact clock font. The original 5x7 bring-up font, 6x8 candidate, first
+compact candidate, and soft compact candidate remain available as references.
+The active font awaits physical evaluation. Glyphs occupy y=1..6; row 7 is
+intentionally unused by basic time rendering. The formatter centers actual
+rendered width on every draw and omits the leading zero in 12-hour mode.
 
 The selected WS2812 driver keeps a 256-entry static RGB buffer with raw access
 and a logical 32x8 helper. Physical observation established raw index 0 at
 top-left, left-to-right column progression, and alternating vertical column
 traversal (first column top-to-bottom). The raw chase, RGB transport, corners,
-perimeter, row/column proofs, and temporary 5x7 glyph rendering are physically
-verified. The former fills, geometry scans, fixed text hold, and raw chase are
-retired from normal runtime. Development renders local civil `HH:MM` from
+perimeter, row/column proofs, both prior font candidates, and live clock mode
+are physically verified. The full-height 6x8 candidate was judged too large.
+The active compact font uses six glyph rows at y=1..6; row 7 is unused by the
+primary time renderer and remains available for future overlays. The former
+fills, geometry scans,
+fixed text hold, and raw chase are retired from normal runtime. Development
+renders local civil `HH:MM` from
 `presentation::State`, using the current 24-hour configuration and logical
 amber RGB `(255, 96, 0)`. Global software brightness is an unsigned 0..255
 output control, default 8; integer nearest scaling `(channel * brightness +
 127) / 255` produces `(8, 3, 0)` at the default. Scaling occurs during GRB
 serialization, leaves framebuffer colors intact, and does not change the
 panel's 5 V supply. Development console commands `brightness` and
-`brightness <0-255>` report/set it; a changed value retransmits the current
-frame without rebuilding presentation time. Invalid UTC clears the panel;
-otherwise a frame is sent when displayed `HH:MM` changes. Transport remains
+`brightness <0-255>` report/set it. `color` reports logical clock RGB;
+`color <r> <g> <b>` sets temporary development values from 0..255 and a change
+redraws/retransmits the current time. Color remains full-scale upstream of
+global brightness and future output-transfer correction. Invalid UTC clears
+the panel; otherwise a frame is sent when displayed `HH:MM` or logical color
+changes. Transport remains
 bounded to eight words per service and a nonblocking 1 ms latch interval.
 Brightness is an appearance control, not a current limiter. Gamma/perceptual
 correction, separate current-budget limiting, and ambient-light control remain
@@ -218,7 +237,10 @@ Global display brightness applies once to the finished composition and sets
 overall apparent clock brightness. Neither value belongs in font glyphs or
 transport behavior. Future fades, dissolves, glow, trails, sparkles, swirls,
 scrolling, and special-day effects should produce logical colors and local
-intensity, then share the same global output stages.
+intensity, then share the same global output stages. Clock glyphs are masks
+painted with logical RGB; black/off explicitly writes zero RGB and differs
+from transparent/no-op. See [Consumer Edition Requirements, Section 8](Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects)
+for the required compositor semantics and implementation priority.
 
 When reducing a pixel's intended/perceived intensity, apply local intensity
 and global brightness before gamma or LED-transfer correction. Do not gamma
@@ -269,15 +291,13 @@ channels. Include smooth fades or trails because static digits alone do not
 show transition quality. Select production behavior only from physical
 evidence. This is a future validation plan, not implemented test mode.
 
-Future presentation architecture is intended to layer clock state →
-clock/font renderer → optional transition/effect compositor → special-day
-theme/palette → day-of-month bottom-row color overlay → logical 32x8
-framebuffer → WS2812 transport. Effects and special-day behavior are
-presentation policy and never own authoritative time. Future transitions may
-use old/new logical frames; allocating a second 768-byte buffer is acceptable
-if it makes composition clearer. A taller custom numeric font and transitions
-such as dissolve, scroll, wipe, or swirl remain future work; no effects framework
-is implemented.
+The formatting and measured-width centering contract is recorded in
+[Consumer Edition Requirements, Section 5](Consumer-Edition-Requirements#5-12--24-hour-display);
+optional recenter behavior is in [Section 8](Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects).
+Future transitions consume old and new logical positions and remain entirely
+in presentation; they cannot delay or change authoritative time. The compact
+font is implemented for evaluation, while final font selection and effects
+remain open. No effects framework is implemented.
 
 The approximately 3–4 status LEDs are separate from the main 256-pixel chain.
 The main panel driver owns its 32x8 geometry, framebuffer/rendering,

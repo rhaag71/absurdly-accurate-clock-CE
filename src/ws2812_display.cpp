@@ -10,9 +10,6 @@
 
 namespace ws2812_display {
 namespace {
-// Full logical amber is scaled at output; default 8 preserves bring-up output.
-constexpr Rgb clock_amber = {255, 96, 0};
-
 // With the configured 150 MHz system clock and divider 15, PIO runs at
 // 10 MHz. Ten PIO cycles encode each 800 kHz WS2812 bit: T0H/T0L = 3/7
 // cycles and T1H/T1L = 6/4 cycles. The post-frame low interval is handled
@@ -68,18 +65,21 @@ void Driver::begin(const presentation::State&) {
     frame_dirty_ = true; // The first frame is completely dark.
     has_rendered_text_ = false;
     brightness_refresh_.reset();
+    color_refresh_.reset();
     initialized_ = true;
 }
 
-void Driver::updateFrame(const presentation::State& state) {
+void Driver::updateFrame(const presentation::State& state, bool force_refresh) {
     char text[6] = {};
     const bool valid = clock_text_renderer::formatHHMM(state, text);
-    if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0)
+    if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0 &&
+        !force_refresh)
         return;
     if (!valid && !has_rendered_text_) return;
 
     if (valid) {
-        clock_text_renderer::render(state, pixels_, clock_amber);
+        const ClockColor color = clockColor();
+        clock_text_renderer::render(state, pixels_, Rgb{color.red, color.green, color.blue});
         std::memcpy(last_text_, text, sizeof(last_text_));
         has_rendered_text_ = true;
     } else {
@@ -118,9 +118,12 @@ void Driver::service(const presentation::State& state) {
         latch_pending_ = false;
     }
 
-    if (brightness_refresh_.consumeChange()) frame_dirty_ = true;
+    const bool brightness_changed = brightness_refresh_.consumeChange();
+    const bool color_changed = color_refresh_.consumeChange();
+    const bool force_refresh = brightness_changed || color_changed;
+    if (force_refresh) frame_dirty_ = true;
 
-    updateFrame(state);
+    updateFrame(state, force_refresh);
 
     if (frame_dirty_) {
         tx_cursor_ = 0;

@@ -44,6 +44,13 @@ physical verification.
 - Convert UTC to civil time downstream, in presentation code. DST and 12/24-hour
   formatting are presentation responsibilities; birthdays and holidays use
   local civil dates.
+- Format the selected civil time before measuring its active font's actual
+  rendered width. Center every draw on the 32-column panel with
+  `x = (32 - rendered_width) / 2` and deterministic integer placement. In
+  12-hour mode omit the leading zero; 24-hour mode uses two hour digits.
+  Presentation may subtly animate only a changed centering origin, using old
+  and new logical positions; it must not delay or affect the current time.
+  Effects consume layout positions and never own formatting or timekeeping.
 - Preserve the original AAC timezone/DST implementation. Do not add a competing
   timezone conversion system.
 - Presentation consumes a coherent, read-only clock snapshot. Display hardware
@@ -99,13 +106,26 @@ physical verification.
   bounded. Do not add dynamic registries or heap allocation.
 - The WS2812 driver owns a fixed 768-byte framebuffer and PIO0 SM0 only in
   selected builds. The 32x8 mapping, transport, corners, perimeter, row/column
-  scans, and temporary 5x7 glyph rendering were physically verified. The
-  normal development runtime now renders `HH:MM` from the shared presentation
-  snapshot in dim amber; the former geometry/fill/raw-chase walkthrough is
-  retired from normal runtime. WS2812 output applies software global
+  scans, temporary 5x7 font, full-height 6x8 candidate, and continuous clock
+  mode were physically evaluated. The 6x8 candidate was judged too large for
+  the intended product/effect space. The normal development runtime uses the
+  conventional compact 4x6 clock font with plain unslashed zero, centered by
+  actual string width; its six rows are drawn at y=1..6 and row 7 stays unused
+  by primary time glyphs. The former geometry/fill/raw-chase
+  walkthrough is retired from normal runtime. Development console `color`
+  reports the current color and `color <r> <g> <b>` selects temporary logical
+  RGB (each channel 0..255); color changes refresh the frame upstream of
+  output brightness. Effects should decorate around the readable glyph mask;
+  glyph shapes stay conventional and independent of effects. WS2812 output
+  applies software global
   brightness (0..255, default 8) while serializing pixels; development builds
   expose `brightness` and `brightness <0-255>`. This is an appearance control,
   not a current limiter, and does not vary the panel's 5 V supply.
+- Keep clock glyph geometry independent of its logical RGB paint. In future
+  compositing, black/off paint is opaque RGB(0, 0, 0), while transparent/no-op
+  leaves underlying pixels unchanged; the same glyph mask supports both.
+  Formalize this at the renderer/compositor boundary after font selection and before substantial
+  effects or theme work. Follow [Consumer Edition Requirements, Section 8](docs/Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects).
 - Keep future WS2812 intensity and transfer work downstream of logical
   rendering: effects/local per-pixel intensity, then global brightness, then
   perceptual/LED transfer conversion before serialization. Brightness and

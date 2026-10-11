@@ -133,6 +133,29 @@ default remains to be specified.
 
 Changing display format must not change canonical UTC.
 
+### Formatting and centered layout contract
+
+Format civil time first, then measure the actual rendered pixel width using
+the active clock font, including its glyph widths and spacing. For every draw,
+center that complete composition on the 32-column panel:
+
+    x = (32 - rendered_width) / 2
+
+Use deterministic integer placement when the spare width is odd. Recompute
+from the actual formatted string and active font; do not assume a fixed origin
+or center from nominal glyph dimensions. Formatting precedes measurement, so
+different hour formats and variable-width digits may produce different widths
+and centered origins.
+
+In 12-hour mode, show the hour without a leading zero: `1:23`, `8:05`, `11:59`,
+and `12:00`. Do not show `01:23` or `08:05` in that mode. In 24-hour mode,
+retain two-digit hours: `01:23`, `08:05`, `11:59`, and `23:59`. This is a
+presentation rule only; canonical UTC and time qualification are unaffected.
+
+The selected WS2812 profile is configured for 24-hour output. The clock
+renderer supports unpadded 12-hour presentation before measuring and centering
+the resulting string.
+
 ---
 
 ## 6. Production Personalization and Development Builds
@@ -274,14 +297,25 @@ pixels. The optional PIO software has a logical 32x8 mapping helper matching
 the physically observed topology: raw index 0 is top-left, columns progress
 left-to-right, and traversal alternates vertically (first column top-to-bottom).
 Raw 0..255 chase, RGB transport, four-corner proof, logical perimeter trace,
-row/column scans, and temporary 5x7 glyph rendering were physically verified.
+row/column scans, temporary 5x7 glyph rendering, and the full-height 6x8 font
+were physically evaluated. The 6x8 candidate was judged too large for the
+product direction. The first compact variable-width candidate preserved
+useful spacing but was physically judged visually unattractive. The active
+development font is the conventional 4x6 compact clock face, implemented for
+physical evaluation; final physical approval remains open. Keep glyphs simple,
+chunky, and immediately readable. Effects decorate around the glyph mask
+rather than stylizing or replacing numerals. The renderer draws glyphs at
+y=1..6 and leaves row 7 unused. The widest sample, 88:88, measures 21 columns
+and leaves 5 columns on the left and 6 on the right after centering.
 The normal development WS2812 runtime displays `HH:MM` from the shared
 presentation state through the existing civil-time path. The user has
 physically verified the clock, minute rollover, console, transport, and
 rendering. Software global brightness is 0..255 with default 8 and is applied
 to serialized pixel data; it does not vary the 5 V supply and is not a current
-limiter. Appearance tuning through the optical stack remains pending; final
-font design remains future work.
+limiter. The compact font centers each formatted string by its actual rendered
+width; see Section 5 for the layout and hour-format contract. Twelve-hour
+output omits the leading zero. Appearance
+tuning through the optical stack remains pending.
 
 Display hardware is build-specific and replaceable.
 
@@ -303,14 +337,17 @@ panel driver owns GP8 when compiled in.
 The physical panel has visibly responded to the raw-index chase. Logical
 mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
-topology. Raw chase, RGB transport, corners, perimeter, rows, columns, and
-temporary 5x7 glyph rendering are physically verified. The former fills,
+topology. Raw chase, RGB transport, corners, perimeter, rows, columns, the
+temporary 5x7 font, and the full-height 6x8 candidate were physically
+evaluated. The 6x8 candidate was judged too large; the first compact candidate
+was visually unattractive. The new conventional 4x6 compact font awaits
+physical evaluation. The former fills,
 geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
 runtime. Development now uses the existing simulated GPS/PPS source, normal
-timebase qualification, and presentation state to display civil `HH:MM` in a
-temporary dim amber. The current hour format is 24-hour. The user has
-physically verified clock mode and minute rollover; no effects framework is
-implemented. Software global brightness is implemented for WS2812 output; its
+timebase qualification, and presentation state to display civil `HH:MM` in
+logical amber `(255, 96, 0)` by default. The current hour format is 24-hour.
+The user has physically verified clock mode and minute rollover; no effects
+framework is implemented. Software global brightness is implemented for WS2812 output; its
 appearance tuning remains future bench work. The installed black PETG-style
 pixel grid and diffuser have been tested and produce distinct square pixels;
 apparent brightness is substantially more useful than on the bare panel.
@@ -328,16 +365,69 @@ output conversion, after desired intensity and global brightness have been
 reduced. This differs from a separate electrical current-budget limiter; its
 ordering relative to transfer correction remains undecided. Neither local
 intensity nor global brightness changes the panel's 5 V supply. Effects,
-transfer correction, current budgeting, and final typography/layout remain
-future work.
+transfer correction, current budgeting, and final font selection remain future
+work; the actual-width centering rule is specified in Section 5. The primary
+clock font prioritizes compact, conventional, glance-readable numerals over
+styling. Effects decorate around the glyph mask rather than distorting or
+replacing the numerals. Primary glyphs render at y=1..6; row 7 remains unused
+for future date/status overlays.
 
-The intended future presentation layering is clock state → clock/font renderer
-→ optional transition/effect compositor → special-day theme/palette →
-day-of-month bottom-row color overlay → logical framebuffer → transport.
-Effects and special-day behavior are presentation policy and do not own time.
-Transitions may use old and new logical frames; a second 768-byte buffer is an
-acceptable future choice where useful. A richer full-height numeric font and
-transitions such as dissolve, scroll, wipe, or swirl are not implemented.
+The intended future presentation order is authoritative/civil presentation
+time → selected 12/24-hour formatting → active-font width measurement →
+centered target layout → optional transition/recenter presentation behavior →
+overlays/effects → logical framebuffer → brightness/output processing →
+display transport. Effects and special-day behavior are presentation policy;
+they do not own formatting or authoritative time. If a new string changes the
+centered target origin, presentation may subtly animate from the prior logical
+position to the new one (for example, `9:59`→`10:00` or `12:59`→`1:00`).
+Animation is relevant only when the target origin changes; no shift or wobble
+is required when it stays the same. The new time value becomes the
+presentation's current value immediately; animation may affect only its visual
+placement and must not hold back the update. Authoritative time never waits
+for an animation.
+Future scroll, dissolve, trails, glow, particles, swirl, and holiday
+transitions consume old and new logical positions rather than assuming a
+permanent x coordinate. They remain unimplemented and must preserve clear
+time-quality indication.
+
+### Clock glyph shape and paint semantics
+
+The selected clock font defines a geometric glyph mask. The renderer or
+compositor paints that shape using a logical RGB clock paint value; the glyph
+data is independent of its color. Ordinary colors and black/off are all valid
+paint values, including amber, red, green, blue, white, and black/off. In
+particular, RGB(0, 0, 0) is an intentional clock paint, not an error or a
+request for a separate inverse font.
+
+Black/off paint explicitly writes RGB(0, 0, 0) at glyph pixels, forcing those
+pixels dark. Transparency is different: a transparent/no-op pixel leaves the
+existing underlying pixel unchanged. The compositor must preserve this
+distinction. For example, a future illuminated background/effect can remain
+visible around the glyph mask while black/off clock paint makes the time
+readable as dark cutouts. Later overlay layers may add content such as a
+day-of-month marker, status mark, or holiday accent.
+
+The future logical composition may use this order:
+
+    background/effect layer
+        -> clock glyph mask painted with logical RGB clock paint
+        -> overlay layer(s)
+        -> logical framebuffer
+        -> output processing
+        -> display transport
+
+Keep the font geometric and logical. It does not own colors, foreground or
+background policy, effects, holidays, themes, brightness, transfer correction,
+current limiting, or display transport. Compositing and output stages consume
+logical RGB; black/off remains RGB(0, 0, 0) through global brightness, future
+transfer correction and current protection, and becomes black pixel data at
+WS2812 serialization. Do not add transport-specific blackout encoding or a
+special inverse-mode flag.
+
+Black/off remains a valid future overlay/render color; this behavior is not
+implemented in the current renderer. Implement the compositor semantics early,
+after the clock font is selected and the renderer/compositor boundary is
+formalized, and before substantial theme, holiday, or effect work.
 
 Animation style is not fixed. Fades, dissolves, decays, color transitions, and
 rolling effects are candidates for early development-build testing. Fonts,

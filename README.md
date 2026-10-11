@@ -42,8 +42,16 @@ verified. Its software global brightness is 0..255, defaults to 8, and scales
 serialized pixels only. The development console accepts `brightness` and
 `brightness <0-255>`. This appearance control is not a current limiter and
 does not change the panel's 5 V supply. Optical-stack tuning remains pending;
-the former panel walkthrough is retired from normal runtime. The 5x7 font
-remains temporary. See the
+the former panel walkthrough is retired from normal runtime. The physically
+evaluated 6x8 candidate was judged too large, and the first compact candidate
+was judged visually unattractive. The active development font is a new
+conventional, compact 4x6 clock face with plain unslashed zero; it awaits
+physical evaluation. Its six rows are drawn at y=1..6, leaving row 7 unused.
+The renderer centers each formatted string by actual glyph width and
+suppresses the leading zero in 12-hour mode. Typography stays visually quiet
+so future effects can decorate around the readable glyph mask. The full layout
+contract is recorded in the
+[Consumer Edition requirements](docs/Consumer-Edition-Requirements). See the
 [CE engineering baseline](docs/ce-engineering-baseline.md) for status and
 resource ownership.
 
@@ -80,7 +88,7 @@ Build and upload the optional development clock with
 `pio run -e pico2-dev-ws2812 -t upload`. The build uses GP8 and PIO0 SM0. Its
 normal runtime displays civil `HH:MM` derived from the shared presentation
 snapshot and existing timezone/DST conversion. The current compile-time hour
-format is 24-hour. The temporary 5x7 digits/colon use logical RGB
+format is 24-hour. The compact variable-width digits/colon use logical RGB
 `(255, 96, 0)` and the driver's software global brightness, range 0..255,
 default 8. Rounded integer scaling yields `(8, 3, 0)` at the default, and
 brightness changes retransmit the current frame. In the development console,
@@ -88,7 +96,7 @@ brightness changes retransmit the current frame. In the development console,
 scales pixel data only; it is not a current limiter and does not change the
 panel's 5 V supply. Clock mode is physically verified; optical-stack tuning
 remains pending. The display clears while UTC is invalid and otherwise
-transmits when displayed `HH:MM` changes. Geometry proofs and
+transmits when displayed time or logical color changes. Geometry proofs and
 the old raw chase remain in host regression coverage, not the normal runtime.
 Host tests do not verify electrical panel timing. The future intensity,
 transfer-correction, and panel A/B design is documented in the [engineering
@@ -112,15 +120,17 @@ supply with shared ground. The driver uses PIO and no DMA. Its logical mapping
 matches the physically observed top-left-start vertical serpentine columns;
 the four-corner proof, perimeter trace, and row/column scans are physically
 verified. The live `HH:MM` clock mode is physically verified. The final
-clock font is expected to use more of the eight-pixel
-height (approximately 6x8 or variable-width); a day-of-month bottom-row color
-overlay and digit transitions such as dissolve, scroll, wipe, or swirl are
-future context only. Future layering is presentation/clock state → clock/font
-renderer → optional transition/effect compositor → special-day theme/palette →
-day-of-month overlay → logical framebuffer → transport. Effects remain
-presentation policy and never own or alter authoritative time. A transition
-may retain old and new logical frames; a second 768-byte framebuffer is an
-acceptable option if needed. Brightness scaling is not a current limiter.
+verified. The 6x8 candidate was judged too large and the first compact font
+was judged visually unattractive despite its useful spacing. The new
+conventional 4x6 compact clock font awaits physical evaluation; final approval
+remains open. Effects should decorate around the glyphs, not stylize or replace
+them. Time is formatted before its actual rendered width is measured and
+centered on every draw; optional subtle
+recenter animation is relevant only when the target origin changes. See the
+[Consumer Edition display requirements](docs/Consumer-Edition-Requirements#5-12--24-hour-display)
+for 12/24-hour formatting and the [presentation behavior](docs/Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects)
+for future effects. Effects remain presentation policy and never own or alter
+authoritative time. Brightness scaling is not a current limiter.
 
 The approximately 3–4 WS2812 status LEDs are a separate logical and electrical
 device, not pixels 256 onward in the panel chain. Their future data path uses

@@ -37,13 +37,59 @@ int main() {
     assert(std::strcmp(text, "07:34") == 0); // Civil zone conversion is reused.
     assert(clock_text_renderer::render(state, pixels, amber));
 
-    // The fixed five-glyph layout begins at x=3 and occupies rows 0..6.
+    // Twelve-hour mode presents natural-width hours before width layout.
+    state.clock.utc.hour = 1;
+    state.clock.utc.minute = 5;
+    state.zone = presentation::DisplayZone::utc;
+    assert(clock_text_renderer::formatHHMM(
+        state, text, ce_config::HourFormat::twelve_hour));
+    assert(std::strcmp(text, "1:05") == 0);
+    assert(clock_text_renderer::render(state, pixels, amber,
+                                       ce_config::HourFormat::twelve_hour));
+    state.zone = presentation::DisplayZone::eastern;
+    state.clock.utc.hour = 13;
+    state.clock.utc.minute = 5;
+    assert(clock_text_renderer::formatHHMM(
+        state, text, ce_config::HourFormat::twelve_hour));
+    assert(std::strcmp(text, "8:05") == 0);
+    assert(clock_text_renderer::render(state, pixels, amber,
+                                       ce_config::HourFormat::twelve_hour));
+    assert(compact_clock_font::textWidth(text) == 16);
+    // "8:05" is 16 columns and receives the integer-centered origin x=8.
+    assert(litAt(pixels, 9, 1));
+    state.clock.utc.hour = 5;
+    state.clock.utc.minute = 0;
+    assert(clock_text_renderer::formatHHMM(
+        state, text, ce_config::HourFormat::twelve_hour));
+    assert(std::strcmp(text, "12:00") == 0); // Eastern midnight is 12 AM.
+    state.zone = presentation::DisplayZone::utc;
+    state.clock.utc.hour = 23;
+    state.clock.utc.minute = 59;
+    assert(clock_text_renderer::formatHHMM(
+        state, text, ce_config::HourFormat::twelve_hour));
+    assert(std::strcmp(text, "11:59") == 0);
+    assert(clock_text_renderer::render(state, pixels, amber,
+                                       ce_config::HourFormat::twelve_hour));
+    state.clock.utc.hour = 12;
+    state.clock.utc.minute = 34;
+    assert(clock_text_renderer::formatHHMM(
+        state, text, ce_config::HourFormat::twelve_hour));
+    assert(std::strcmp(text, "12:34") == 0);
+    state.clock.utc.hour = 12;
+    state.clock.utc.minute = 34;
+    state.zone = presentation::DisplayZone::eastern;
+    assert(clock_text_renderer::formatHHMM(state, text));
+    assert(std::strcmp(text, "07:34") == 0);
+    assert(clock_text_renderer::render(state, pixels, amber));
+
+    // The 21-column 07:34 string centers at x=5; row 7 remains unused.
     for (int y = 0; y < ws2812_display::logical_height; ++y) {
         for (int x = 0; x < ws2812_display::logical_width; ++x) {
-            if (y == 7 || x < 3 || x >= 28) assert(!litAt(pixels, x, y));
+            if (x < 5 || x >= 26 || y == 0 || y == 7) assert(!litAt(pixels, x, y));
         }
     }
-    assert(litAt(pixels, 4, 0)); // First lit stroke of the '0' in 07:34.
+    assert(litAt(pixels, 6, 1)); // First lit stroke of the '0' in 07:34.
+    assert(!litAt(pixels, 3, 7));
 
     bool before_minute_change[ws2812_display::logical_height]
                              [ws2812_display::logical_width] = {};

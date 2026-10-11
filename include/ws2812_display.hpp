@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "presentation_state.hpp"
 #include "ws2812_pixels.hpp"
+#include "ws2812_clock_color.hpp"
 
 namespace ws2812_display {
 // The selected driver owns GP8, PIO0 SM0, and its raw-order pixel buffer.
@@ -20,6 +21,7 @@ private:
     uint8_t program_offset_ = 0;
     uint8_t tx_brightness_ = default_brightness;
     BrightnessRefreshTracker brightness_refresh_;
+    ClockColorRefreshTracker color_refresh_;
     char last_text_[6] = {};
     bool initialized_ = false;
     bool tx_active_ = false;
@@ -27,7 +29,7 @@ private:
     bool latch_pending_ = false;
     bool has_rendered_text_ = false;
 
-    void updateFrame(const presentation::State& state);
+    void updateFrame(const presentation::State& state, bool force_refresh);
     void sendChunk(uint32_t now_us);
 };
 }

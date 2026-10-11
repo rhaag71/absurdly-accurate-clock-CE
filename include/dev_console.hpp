@@ -11,7 +11,7 @@ enum class Command : uint8_t {
     status, set_time, reset,
     fault_status, gps_off, gps_on, pps_off, pps_on,
     rmc_bad_checksum, rmc_early, rmc_late, rmc_normal, fault_clear,
-    brightness_status, brightness_set,
+    brightness_status, brightness_set, color_status, color_set,
 };
 using CommandHandler = void (*)(void*, Command, int64_t, Console&);
 

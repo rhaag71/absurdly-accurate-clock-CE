@@ -10,6 +10,9 @@
 #include "display_selection.hpp"
 #include "display_output.hpp"
 #include "presentation_state.hpp"
+#if defined(AAC_DISPLAY_WS2812)
+#include "ws2812_clock_color.hpp"
+#endif
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #include "dev_console.hpp"
 #endif
@@ -158,6 +161,22 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
         ws2812_display::setBrightness(static_cast<uint8_t>(utc_seconds));
         char line[48];
         snprintf(line, sizeof(line), "WS2812 brightness set to %u/255", ws2812_display::brightness());
+        console.writeLine(line);
+    } else if (command == dev_console::Command::color_status ||
+               command == dev_console::Command::color_set) {
+        if (command == dev_console::Command::color_set) {
+            const uint32_t packed = static_cast<uint32_t>(utc_seconds);
+            ws2812_display::setClockColor({
+                static_cast<uint8_t>((packed >> 16) & 0xffu),
+                static_cast<uint8_t>((packed >> 8) & 0xffu),
+                static_cast<uint8_t>(packed & 0xffu)});
+        }
+        const auto color = ws2812_display::clockColor();
+        char line[64];
+        snprintf(line, sizeof(line), "Logical clock RGB: %u %u %u",
+                 static_cast<unsigned>(color.red),
+                 static_cast<unsigned>(color.green),
+                 static_cast<unsigned>(color.blue));
         console.writeLine(line);
     } else
 #endif

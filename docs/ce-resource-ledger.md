@@ -147,8 +147,14 @@ flash than the historical first bring-up measurement (47,532 B); `.data +
 792 B, including the 768-byte framebuffer and driver state; the PIO instruction
 image adds 8 B of SRAM. At that milestone the restored image awaited physical
 reverification; the user subsequently confirmed that raw-fill/chase image,
-four-corner proof, perimeter trace, and row/column scans on hardware. The new
-5x7 font/text proof awaits physical testing.
+four-corner proof, perimeter trace, and row/column scans on hardware. The
+temporary 5x7 font remains available as a known-good reference. The full-height
+6x8 candidate was subsequently evaluated and judged too large. The first
+compact variable-width font preserved useful spacing but was physically
+judged visually unattractive, and the subsequent soft compact candidate was
+not accepted. The active conventional 4x6 compact clock font is implemented
+and awaits physical evaluation; final font approval remains open. It draws at
+y=1..6 and leaves row 7 unused, while preserving that row for future overlays.
 
 The selected driver owns GP8, PIO0 SM0, and four instruction words at fixed
 offset 0. It checks SM0 before claiming it; a conflict leaves GP8 low and
@@ -356,14 +362,27 @@ frame behavior remain unverified.
   unavailable.
 - Current development behavior renders civil `HH:MM` from the shared
   `presentation::State`, using its UTC validity and zone and the compile-time
-  hour-format setting. Logical amber `(255, 96, 0)` at default brightness
-  8/255 yields effective components `(8, 3, 0)`. Frames update
-  only when formatted text changes; invalid UTC clears the last clock frame.
+  hour-format setting. The active conventional 4x6 compact font uses widths
+  2..4, a plain unslashed zero, and centers by measured string width.
+  `88:88` occupies 21 columns and leaves 5 and 6 columns at the sides. Glyphs
+  draw at y=1..6; row 7 is unused by the primary time renderer and remains
+  available for future overlays. The original bring-up 5x7, 6x8, first compact,
+  and soft compact candidates remain available. The 6x8 was judged too large;
+  the first compact font visually unattractive, and the soft candidate was
+  superseded before physical approval. The active conventional font awaits
+  evaluation. Default logical amber `(255, 96, 0)` at
+  brightness 8/255 yields effective components `(8, 3, 0)`. Invalid UTC clears
+  the last clock frame.
   Global software brightness is applied during output serialization, with
   default 8/255 and rounded integer scaling `(channel * brightness + 127) /
   255`. Development console `brightness` reports it and `brightness <0-255>`
-  changes it; brightness-generation tracking retransmits the current frame
-  after a change. Logical framebuffer values remain full scale. This is an
+  changes it. The development-only `color` and `color <r> <g> <b>` commands
+  report/set temporary logical RGB (each channel 0..255); a color-generation
+  change redraws and retransmits the same `HH:MM` even when the minute is
+  unchanged. Logical color stays full scale and upstream of brightness and any
+  future transfer correction. Brightness-generation tracking also retransmits
+  the current frame after a change. Brightness and color remain independent.
+  This is an
   appearance control, not current limiting; panel 5 V supply handling is
   untouched. Gamma/perceptual correction, a separate current-budget limiter,
   and ambient-light control remain future work. Current limiting may later
@@ -442,3 +461,7 @@ No resource figures in this section are firmware build measurements.
 | 2026-10-11 | Temporary 5x7 numeric glyph proof | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 48,408 B flash (Δ +332); 12,312 B `.data + .bss` (Δ 0); 12,584 B including vector table (Δ 0) | Build-derived. Added a static digits/colon glyph table and fixed `12:34` rendered through logical coordinates after geometry proofs. Framebuffer size and static SRAM are unchanged. Mapping, transport, PIO ownership, and raw chase are unchanged; default ELFs remain without WS2812/PIO symbols. Font/text behavior awaits physical verification. |
 | 2026-10-11 | Retire bring-up runtime; display presentation-state clock | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B / 11,632 B (unchanged) | `pico2-dev-ws2812`: 48,152 B flash (Δ −256); 12,308 B `.data + .bss` (Δ −4); 12,580 B including vector table (Δ −4) | Build-derived. Removed the demo scheduler and replaced fixed text with an `HH:MM` renderer consuming the shared snapshot and existing civil-time conversion. The panel object remains framebuffer-owning; no second framebuffer was added. GP8, PIO0 SM0/four instruction words, eight-word service bound, 1 ms latch, no DMA/interrupt remain unchanged. Default build sizes are unchanged; ELF symbol scans show no WS2812/font/PIO references in defaults. User-reported prior geometry/font physical verification is preserved; new clock-mode runtime awaits physical verification. |
 | 2026-10-11 | Global WS2812 brightness and development console command | `pico2`: 44,888 B flash / 11,312 B RAM (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B RAM (unchanged) | `pico2-dev-ws2812`: 48,560 B flash (Δ +408); 12,320 B RAM (Δ +12); 12,592 B including vector table (Δ +12) | Build-derived using PlatformIO summaries and ELF sections/symbols. The display composition is 796 B, logical framebuffer remains 768 B, PIO image remains 8 B. Brightness state adds a 1-byte setting and 4-byte generation counter, plus driver tracking state. GP8, PIO0 SM0/four instruction words, no DMA/interrupt, eight-word service bound and 1 ms latch remain unchanged. Default ELFs contain no linked WS2812/font/brightness/PIO symbols. No hardware measurement was performed. |
+| 2026-10-11 | First full-height 6x8 clock-font candidate | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 48,572 B flash (Δ +12); 12,320 B `.data + .bss` (Δ 0); 12,592 B including vector table (Δ 0) | Build-derived. Font table and logical glyph renderer add 12 B to selected-profile flash; no static SRAM delta and no second framebuffer. Default ELF symbol scans show no WS2812 driver/PIO or either numeric font linked. GP8, PIO0 SM0/four instruction words, no DMA/interrupt, transport and brightness pipeline remain unchanged. 5x7 remains physically verified reference; 6x8 awaits physical verification. |
+| 2026-10-11 | Compact variable-width font and development logical clock color | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 49,296 B flash (Δ +724); 12,336 B `.data + .bss` (Δ +16); 12,608 B including vector table (Δ +16) | Build-derived. Added compact font/table/layout code and development RGB parsing/control. The selected `display` object is 800 B, framebuffer stays 768 B, PIO image stays 8 B; static SRAM includes color state and refresh tracking. GP8/PIO0 SM0/no DMA/no interrupt, transport and brightness output stage are unchanged. Default ELFs contain no WS2812, PIO, font, or clock-color symbols. Prior fonts preserved; compact font awaits physical evaluation. |
+| 2026-10-11 | Soft compact clock-font candidate and unpadded 12-hour rendering | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 49,352 B flash (Δ +56); 12,336 B `.data + .bss` (Δ 0); 12,608 B including vector table (Δ 0) | Build-derived from PlatformIO summaries; static SRAM includes the unchanged 272-byte vector table in total. The new glyph table and renderer are selected only by WS2812 rendering. Default ELF symbol scans found no clock renderer, numeric clock font, WS2812 driver, or color-control symbols. Existing framebuffer, GP8/PIO0 SM0, four PIO instruction words, transport, color, and brightness path are unchanged. Earlier fonts remain available. New candidate awaits physical evaluation. |
+| 2026-10-11 | Conventional 4x6 compact WS2812 clock font | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 49,336 B flash (Δ −16); 12,336 B `.data + .bss` (Δ 0); 12,608 B including vector table (Δ 0) | Build-derived from PlatformIO summaries. Replaced the active soft 5x7 candidate with six-row glyphs (2–4 columns wide) drawn at y=1..6; row 7 remains unused. No second framebuffer or SRAM increase. Prior font headers/tests remain available. Default profile totals are unchanged; font is awaiting user physical evaluation. |

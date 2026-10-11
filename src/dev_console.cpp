@@ -6,6 +6,7 @@
 #include "gps_input_simulated.hpp"
 #if defined(AAC_DISPLAY_WS2812)
 #include "ws2812_brightness.hpp"
+#include "ws2812_clock_color.hpp"
 #endif
 
 namespace dev_console {
@@ -23,6 +24,39 @@ bool exactDigits(const char* value, size_t size) {
     for (size_t i = 0; i < size; ++i) if (!digit(value[i])) return false;
     return true;
 }
+#if defined(AAC_DISPLAY_WS2812)
+bool parseRgb(const char* first, const char* remaining, int64_t& packed) {
+    unsigned components[3] = {};
+    const char* cursor = first;
+    for (const char* p = cursor; *p; ++p) if (!digit(*p)) return false;
+    if (!*cursor) return false;
+    unsigned first_value = 0;
+    for (; *cursor; ++cursor) {
+        const unsigned digit_value = static_cast<unsigned>(*cursor - '0');
+        if (first_value > (255u - digit_value) / 10u) return false;
+        first_value = first_value * 10u + digit_value;
+    }
+    components[0] = first_value;
+    cursor = remaining;
+    for (unsigned component = 1; component < 3; ++component) {
+        while (whitespace(*cursor)) ++cursor;
+        if (!digit(*cursor)) return false;
+        unsigned value = 0;
+        while (digit(*cursor)) {
+            const unsigned digit_value = static_cast<unsigned>(*cursor++ - '0');
+            if (value > (255u - digit_value) / 10u) return false;
+            value = value * 10u + digit_value;
+        }
+        components[component] = value;
+        if (component == 1 && !whitespace(*cursor)) return false;
+    }
+    while (whitespace(*cursor)) ++cursor;
+    if (*cursor) return false;
+    packed = static_cast<int64_t>((components[0] << 16) |
+                                  (components[1] << 8) | components[2]);
+    return true;
+}
+#endif
 bool leap(unsigned year) {
     return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
 }
@@ -181,6 +215,8 @@ void Console::execute(CommandHandler handler, void* context) {
 #if defined(AAC_DISPLAY_WS2812)
             write("brightness Show or set WS2812 brightness (0-255)\r\n");
             write("           brightness <0-255>\r\n");
+            write("color      Show or set logical clock RGB (0-255 each)\r\n");
+            write("           color <r> <g> <b>\r\n");
 #endif
             write("reset      Reset simulator to configured UTC seed\r\n");
             write("fault      Inspect or change simulated GPS/PPS faults\r\n");
@@ -213,6 +249,16 @@ void Console::execute(CommandHandler handler, void* context) {
                     writeLine("Usage: brightness <0-255>");
             } else {
                 writeLine("Usage: brightness <0-255>");
+            }
+        } else if (std::strcmp(begin, "color") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::color_status, 0, *this);
+            } else {
+                int64_t packed = 0;
+                if (parseRgb(args, second, packed) && handler)
+                    handler(context, Command::color_set, packed, *this);
+                else
+                    writeLine("Usage: color <r> <g> <b> (each 0-255)");
             }
 #endif
         } else if (std::strcmp(begin, "exit") == 0 && !*args) {
