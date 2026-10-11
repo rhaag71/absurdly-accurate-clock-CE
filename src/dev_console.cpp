@@ -4,6 +4,9 @@
 #include <cstring>
 #include "clock_state.hpp"
 #include "gps_input_simulated.hpp"
+#if defined(AAC_DISPLAY_WS2812)
+#include "ws2812_brightness.hpp"
+#endif
 
 namespace dev_console {
 namespace {
@@ -175,6 +178,10 @@ void Console::execute(CommandHandler handler, void* context) {
             write("status     Show clock and simulator status\r\n");
             write("time       Set simulated UTC\r\n");
             write("           time YYYY-MM-DD HH:MM:SS\r\n");
+#if defined(AAC_DISPLAY_WS2812)
+            write("brightness Show or set WS2812 brightness (0-255)\r\n");
+            write("           brightness <0-255>\r\n");
+#endif
             write("reset      Reset simulator to configured UTC seed\r\n");
             write("fault      Inspect or change simulated GPS/PPS faults\r\n");
             writeLine("           fault status | gps {on|off} | pps {on|off} | rmc {normal|bad-checksum|early|late} | clear");
@@ -190,6 +197,24 @@ void Console::execute(CommandHandler handler, void* context) {
             } else if (handler) {
                 handler(context, Command::set_time, epoch, *this);
             }
+#if defined(AAC_DISPLAY_WS2812)
+        } else if (std::strcmp(begin, "brightness") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::brightness_status, 0, *this);
+            } else if (*args && !*second && exactDigits(args, std::strlen(args))) {
+                unsigned value = 0;
+                for (const char* p = args; *p; ++p) {
+                    value = value * 10u + static_cast<unsigned>(*p - '0');
+                    if (value > 255u) break;
+                }
+                if (value <= 255u && handler)
+                    handler(context, Command::brightness_set, value, *this);
+                else
+                    writeLine("Usage: brightness <0-255>");
+            } else {
+                writeLine("Usage: brightness <0-255>");
+            }
+#endif
         } else if (std::strcmp(begin, "exit") == 0 && !*args) {
             returnToMonitor();
         } else if (std::strcmp(begin, "fault") == 0) {

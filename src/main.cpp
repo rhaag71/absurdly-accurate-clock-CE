@@ -149,6 +149,18 @@ void restartSimulator(int64_t utc_seconds) {
 
 void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
                     dev_console::Console& console) {
+#if defined(AAC_DISPLAY_WS2812)
+    if (command == dev_console::Command::brightness_status) {
+        char line[48];
+        snprintf(line, sizeof(line), "WS2812 brightness: %u/255", ws2812_display::brightness());
+        console.writeLine(line);
+    } else if (command == dev_console::Command::brightness_set) {
+        ws2812_display::setBrightness(static_cast<uint8_t>(utc_seconds));
+        char line[48];
+        snprintf(line, sizeof(line), "WS2812 brightness set to %u/255", ws2812_display::brightness());
+        console.writeLine(line);
+    } else
+#endif
     if (command == dev_console::Command::set_time) {
         restartSimulator(utc_seconds);
         const auto utc = clock_model::fromUnix(utc_seconds);

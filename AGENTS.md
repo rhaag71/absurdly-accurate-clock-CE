@@ -98,12 +98,24 @@ physical verification.
   scheduling remains cooperative and drivers must keep each service call
   bounded. Do not add dynamic registries or heap allocation.
 - The WS2812 driver owns a fixed 768-byte framebuffer and PIO0 SM0 only in
-  selected builds. Development shows dim RGB fills, a four-corner logical
-  proof, a one-lap logical perimeter trace, row/column scans, then a raw 0..255
-  pixel chase. The raw transport/chase, vertical serpentine column topology,
-  four-corner proof, and perimeter trace were physically verified; row/column
-  scans await physical verification. No higher-level effects are implemented.
-  Brightness is not a current limiter.
+  selected builds. The 32x8 mapping, transport, corners, perimeter, row/column
+  scans, and temporary 5x7 glyph rendering were physically verified. The
+  normal development runtime now renders `HH:MM` from the shared presentation
+  snapshot in dim amber; the former geometry/fill/raw-chase walkthrough is
+  retired from normal runtime. WS2812 output applies software global
+  brightness (0..255, default 8) while serializing pixels; development builds
+  expose `brightness` and `brightness <0-255>`. This is an appearance control,
+  not a current limiter, and does not vary the panel's 5 V supply.
+- Keep future WS2812 intensity and transfer work downstream of logical
+  rendering: effects/local per-pixel intensity, then global brightness, then
+  perceptual/LED transfer conversion before serialization. Brightness and
+  local intensity are distinct from gamma and electrical current protection.
+  If reducing intended visual intensity, scale before transfer correction.
+  The future current-budget limiter's ordering relative to transfer
+  correction is unresolved; do not implement or prescribe it from this note.
+  WS2812-family low-code behavior must be validated on this panel before using
+  a WS2812-specific curve. See the engineering baseline for the reference and
+  development A/B plan.
 - Future status indication uses a separate chain of approximately 3–4 WS2812
   LEDs on its own data GPIO and separate driver/module. Do not append them to
   the 256-pixel panel chain or assign/reserve their GPIO before implementation.

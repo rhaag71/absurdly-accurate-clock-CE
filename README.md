@@ -34,9 +34,16 @@ optional PIO driver uses GP8 when selected. The raw 0..255 chase was physically
 verified and established the panel topology: raw index 0 is top-left, with
 columns progressing left-to-right and alternating top-to-bottom / bottom-to-top
 traversal. The compile-time logical map now follows that vertical serpentine
-column order. The four-corner proof and clockwise perimeter trace are
-physically verified. Logical row and column scans are implemented and await
-physical verification; no higher-level effects are implemented. See the
+column order. The four-corner proof, clockwise perimeter trace, row/column
+scans, and temporary 5x7 glyph rendering are physically verified. The
+development WS2812 profile renders simulated-time `HH:MM` through the normal
+timing and presentation path in dim amber; clock mode has been physically
+verified. Its software global brightness is 0..255, defaults to 8, and scales
+serialized pixels only. The development console accepts `brightness` and
+`brightness <0-255>`. This appearance control is not a current limiter and
+does not change the panel's 5 V supply. Optical-stack tuning remains pending;
+the former panel walkthrough is retired from normal runtime. The 5x7 font
+remains temporary. See the
 [CE engineering baseline](docs/ce-engineering-baseline.md) for status and
 resource ownership.
 
@@ -69,15 +76,24 @@ compile-time only. Drivers receive the same `presentation::State`, own their
 rendering and hardware, and must make bounded nonblocking progress. The
 authoritative UTC engine has no display-driver dependency.
 
-Build and upload the optional development panel bring-up with
-`pio run -e pico2-dev-ws2812 -t upload`. The build uses GP8 and PIO0 SM0. The
-driver sends dim RGB fills, a dark interval, four logical corners one at a time,
-a dark interval, one dim pixel tracing the logical perimeter for one lap, a dark
-interval, logical rows 0–7 and columns 0–31, a dark interval, then one dim white
-LED chasing raw indices 0..255 repeatedly. The raw chase, four-corner proof,
-and perimeter trace are physically verified. Host tests cover raw pixel
-storage, mapping, perimeter, and row/column frames; they do not verify
-electrical panel timing or the new scans.
+Build and upload the optional development clock with
+`pio run -e pico2-dev-ws2812 -t upload`. The build uses GP8 and PIO0 SM0. Its
+normal runtime displays civil `HH:MM` derived from the shared presentation
+snapshot and existing timezone/DST conversion. The current compile-time hour
+format is 24-hour. The temporary 5x7 digits/colon use logical RGB
+`(255, 96, 0)` and the driver's software global brightness, range 0..255,
+default 8. Rounded integer scaling yields `(8, 3, 0)` at the default, and
+brightness changes retransmit the current frame. In the development console,
+`brightness` reports the setting and `brightness <0-255>` changes it. Brightness
+scales pixel data only; it is not a current limiter and does not change the
+panel's 5 V supply. Clock mode is physically verified; optical-stack tuning
+remains pending. The display clears while UTC is invalid and otherwise
+transmits when displayed `HH:MM` changes. Geometry proofs and
+the old raw chase remain in host regression coverage, not the normal runtime.
+Host tests do not verify electrical panel timing. The future intensity,
+transfer-correction, and panel A/B design is documented in the [engineering
+baseline](docs/ce-engineering-baseline.md), including the Mountain Lizard
+reference; no gamma curve is implemented.
 
 When explicitly selected, the PD-2200 operates in **Noritake serial command mode**, configured for 9600
 baud, 8N1. For the verified PD-2200, command `0x0E` clears displayed characters
@@ -94,9 +110,17 @@ The data path uses the SN74HCT541N level shifter and approximately 330-ohm
 series resistor; development powers the panel from a separate regulated 5 V
 supply with shared ground. The driver uses PIO and no DMA. Its logical mapping
 matches the physically observed top-left-start vertical serpentine columns;
-the four-corner proof and perimeter trace are physically verified. Row and
-column scans are implemented but await physical verification. Brightness is
-fixed low for bring-up and is not a current limiter.
+the four-corner proof, perimeter trace, and row/column scans are physically
+verified. The live `HH:MM` clock mode is physically verified. The final
+clock font is expected to use more of the eight-pixel
+height (approximately 6x8 or variable-width); a day-of-month bottom-row color
+overlay and digit transitions such as dissolve, scroll, wipe, or swirl are
+future context only. Future layering is presentation/clock state → clock/font
+renderer → optional transition/effect compositor → special-day theme/palette →
+day-of-month overlay → logical framebuffer → transport. Effects remain
+presentation policy and never own or alter authoritative time. A transition
+may retain old and new logical frames; a second 768-byte framebuffer is an
+acceptable option if needed. Brightness scaling is not a current limiter.
 
 The approximately 3–4 WS2812 status LEDs are a separate logical and electrical
 device, not pixels 256 onward in the panel chain. Their future data path uses

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "ws2812_brightness.hpp"
 
 namespace ws2812_display {
 constexpr std::size_t pixel_count = 256;
@@ -101,9 +102,9 @@ public:
     uint32_t grbWord(std::size_t raw_index, uint8_t brightness = 255) const {
         if (raw_index >= pixel_count) return 0;
         const Rgb pixel = pixels_[raw_index];
-        const uint32_t green = static_cast<uint16_t>(pixel.green) * brightness / 255;
-        const uint32_t red = static_cast<uint16_t>(pixel.red) * brightness / 255;
-        const uint32_t blue = static_cast<uint16_t>(pixel.blue) * brightness / 255;
+        const uint32_t green = scaleChannel(pixel.green, brightness);
+        const uint32_t red = scaleChannel(pixel.red, brightness);
+        const uint32_t blue = scaleChannel(pixel.blue, brightness);
         return (green << 24) | (red << 16) | (blue << 8);
     }
 

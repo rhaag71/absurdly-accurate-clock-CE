@@ -92,3 +92,14 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/ws2812_pixels_test.cpp -o "$test_dir/ws2812_pixels"
 "$test_dir/ws2812_pixels"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_WS2812 -I include \
+    src/dev_console.cpp src/clock_state.cpp test/host/ws2812_brightness_console_test.cpp \
+    -o "$test_dir/ws2812_brightness_console"
+"$test_dir/ws2812_brightness_console"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/numeric_font_5x7_test.cpp -o "$test_dir/numeric_font_5x7"
+"$test_dir/numeric_font_5x7"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT -I include \
+    src/clock_state.cpp src/display_time.cpp test/host/clock_text_renderer_test.cpp \
+    -o "$test_dir/clock_text_renderer"
+"$test_dir/clock_text_renderer"

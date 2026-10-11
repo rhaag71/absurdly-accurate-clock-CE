@@ -2,19 +2,16 @@
 
 #if defined(AAC_DISPLAY_WS2812)
 #include <Arduino.h>
+#include <cstring>
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
+#include "clock_text_renderer.hpp"
 #include "pins.hpp"
 
 namespace ws2812_display {
 namespace {
-constexpr uint8_t bringup_level = 8;
-constexpr uint32_t fill_hold_ms = 500;
-constexpr uint32_t corner_hold_ms = 1800;
-constexpr uint32_t chase_step_ms = 35;
-constexpr uint32_t perimeter_step_ms = 35;
-constexpr uint32_t row_hold_ms = 500;
-constexpr uint32_t column_hold_ms = 150;
+// Full logical amber is scaled at output; default 8 preserves bring-up output.
+constexpr Rgb clock_amber = {255, 96, 0};
 
 // With the configured 150 MHz system clock and divider 15, PIO runs at
 // 10 MHz. Ten PIO cycles encode each 800 kHz WS2812 bit: T0H/T0L = 3/7
@@ -68,147 +65,28 @@ void Driver::begin(const presentation::State&) {
     pio_sm_set_enabled(pio0, pio_sm_, true);
 
     pixels_.clear();
-    step_ = DemoStep::dark_start;
-    stage_started_ms_ = millis();
     frame_dirty_ = true; // The first frame is completely dark.
+    has_rendered_text_ = false;
+    brightness_refresh_.reset();
     initialized_ = true;
 }
 
-void Driver::advanceDemo(uint32_t now_ms) {
-    if (step_ == DemoStep::perimeter) {
-        if (!deadlineReached(now_ms, pixel_step_deadline_ms_)) return;
-        if (pixel_index_ + 1 >= perimeter_pixel_count) {
-            step_ = DemoStep::dark_before_rows;
-            stage_started_ms_ = now_ms;
-            pixels_.clear();
-            frame_dirty_ = true;
-            return;
-        }
-        pixel_step_deadline_ms_ = now_ms + perimeter_step_ms;
-        ++pixel_index_;
-        int x = 0;
-        int y = 0;
-        pixels_.clear();
-        if (perimeterStepToXY(pixel_index_, x, y))
-            pixels_.setLogical(x, y, {255, 255, 255});
-        frame_dirty_ = true;
+void Driver::updateFrame(const presentation::State& state) {
+    char text[6] = {};
+    const bool valid = clock_text_renderer::formatHHMM(state, text);
+    if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0)
         return;
-    }
+    if (!valid && !has_rendered_text_) return;
 
-    if (step_ == DemoStep::rows || step_ == DemoStep::columns) {
-        const bool scanning_rows = step_ == DemoStep::rows;
-        const uint32_t hold_ms = scanning_rows ? row_hold_ms : column_hold_ms;
-        if (static_cast<uint32_t>(now_ms - stage_started_ms_) < hold_ms) return;
-        stage_started_ms_ = now_ms;
-        const uint16_t limit = scanning_rows ? logical_height : logical_width;
-        if (pixel_index_ + 1 >= limit) {
-            step_ = scanning_rows ? DemoStep::dark_before_columns
-                                  : DemoStep::dark_before_chase;
-            pixels_.clear();
-        } else {
-            ++pixel_index_;
-            if (scanning_rows)
-                setLogicalRowFrame(pixels_, pixel_index_, {255, 255, 255});
-            else
-                setLogicalColumnFrame(pixels_, pixel_index_, {255, 255, 255});
-        }
-        frame_dirty_ = true;
-        return;
-    }
-
-    if (step_ == DemoStep::chase) {
-        if (!deadlineReached(now_ms, pixel_step_deadline_ms_)) return;
-        pixel_step_deadline_ms_ = now_ms + chase_step_ms;
+    if (valid) {
+        clock_text_renderer::render(state, pixels_, clock_amber);
+        std::memcpy(last_text_, text, sizeof(last_text_));
+        has_rendered_text_ = true;
+    } else {
+        // A newly invalid authoritative snapshot clears the old time once.
         pixels_.clear();
-        pixel_index_ = static_cast<uint16_t>((pixel_index_ + 1) % pixel_count);
-        pixels_.set(pixel_index_, {255, 255, 255});
-        frame_dirty_ = true;
-        return;
-    }
-
-    const bool showing_corner = step_ == DemoStep::corner_top_left ||
-                                step_ == DemoStep::corner_top_right ||
-                                step_ == DemoStep::corner_bottom_right ||
-                                step_ == DemoStep::corner_bottom_left;
-    const uint32_t hold_ms = showing_corner ? corner_hold_ms : fill_hold_ms;
-    if (static_cast<uint32_t>(now_ms - stage_started_ms_) < hold_ms) return;
-    stage_started_ms_ = now_ms;
-    switch (step_) {
-    case DemoStep::dark_start:
-        step_ = DemoStep::red;
-        pixels_.fill({255, 0, 0});
-        break;
-    case DemoStep::red:
-        step_ = DemoStep::green;
-        pixels_.fill({0, 255, 0});
-        break;
-    case DemoStep::green:
-        step_ = DemoStep::blue;
-        pixels_.fill({0, 0, 255});
-        break;
-    case DemoStep::blue:
-        step_ = DemoStep::dark_before_corners;
-        pixels_.clear();
-        break;
-    case DemoStep::dark_before_corners:
-        step_ = DemoStep::corner_top_left;
-        pixels_.clear();
-        pixels_.setLogical(0, 0, {255, 0, 0});
-        break;
-    case DemoStep::corner_top_left:
-        step_ = DemoStep::corner_top_right;
-        pixels_.clear();
-        pixels_.setLogical(31, 0, {0, 255, 0});
-        break;
-    case DemoStep::corner_top_right:
-        step_ = DemoStep::corner_bottom_right;
-        pixels_.clear();
-        pixels_.setLogical(31, 7, {0, 0, 255});
-        break;
-    case DemoStep::corner_bottom_right:
-        step_ = DemoStep::corner_bottom_left;
-        pixels_.clear();
-        pixels_.setLogical(0, 7, {255, 255, 0});
-        break;
-    case DemoStep::corner_bottom_left:
-        step_ = DemoStep::dark_before_perimeter;
-        pixels_.clear();
-        break;
-    case DemoStep::dark_before_perimeter: {
-        step_ = DemoStep::perimeter;
-        pixel_index_ = 0;
-        pixel_step_deadline_ms_ = now_ms + perimeter_step_ms;
-        int x = 0;
-        int y = 0;
-        pixels_.clear();
-        if (perimeterStepToXY(pixel_index_, x, y))
-            pixels_.setLogical(x, y, {255, 255, 255});
-        break;
-    }
-    case DemoStep::perimeter:
-        return;
-    case DemoStep::dark_before_rows:
-        step_ = DemoStep::rows;
-        pixel_index_ = 0;
-        setLogicalRowFrame(pixels_, pixel_index_, {255, 255, 255});
-        break;
-    case DemoStep::rows:
-        return;
-    case DemoStep::dark_before_columns:
-        step_ = DemoStep::columns;
-        pixel_index_ = 0;
-        setLogicalColumnFrame(pixels_, pixel_index_, {255, 255, 255});
-        break;
-    case DemoStep::columns:
-        return;
-    case DemoStep::dark_before_chase:
-        step_ = DemoStep::chase;
-        pixel_index_ = 0;
-        pixel_step_deadline_ms_ = now_ms + chase_step_ms;
-        pixels_.set(pixel_index_, {255, 255, 255});
-        break;
-    case DemoStep::chase:
-        return;
+        last_text_[0] = 0;
+        has_rendered_text_ = false;
     }
     frame_dirty_ = true;
 }
@@ -217,7 +95,7 @@ void Driver::sendChunk(uint32_t now_us) {
     unsigned sent = 0;
     while (sent < 8 && tx_cursor_ < pixel_count &&
            !pio_sm_is_tx_fifo_full(pio0, pio_sm_)) {
-        pio_sm_put(pio0, pio_sm_, pixels_.grbWord(tx_cursor_++, bringup_level));
+        pio_sm_put(pio0, pio_sm_, pixels_.grbWord(tx_cursor_++, tx_brightness_));
         ++sent;
     }
     if (tx_cursor_ == pixel_count) {
@@ -227,11 +105,10 @@ void Driver::sendChunk(uint32_t now_us) {
     }
 }
 
-void Driver::service(const presentation::State&) {
+void Driver::service(const presentation::State& state) {
     if (!initialized_) return;
 
     const uint32_t now_us = micros();
-    const uint32_t now_ms = millis();
     if (tx_active_) {
         sendChunk(now_us);
         return;
@@ -241,12 +118,13 @@ void Driver::service(const presentation::State&) {
         latch_pending_ = false;
     }
 
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-    if (!frame_dirty_) advanceDemo(now_ms);
-#endif
+    if (brightness_refresh_.consumeChange()) frame_dirty_ = true;
+
+    updateFrame(state);
 
     if (frame_dirty_) {
         tx_cursor_ = 0;
+        tx_brightness_ = brightness();
         tx_active_ = true;
         frame_dirty_ = false;
         sendChunk(now_us);

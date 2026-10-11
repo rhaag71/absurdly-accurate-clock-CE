@@ -24,9 +24,10 @@ selection, and display selection. Both profiles use the same authoritative
 timebase. Production selects physical GPS/PPS; development selects simulated
 GPS/PPS. Both default to the bounded USB CDC STDOUT display. The optional
 PD-2200 driver can be selected explicitly. The selected consumer WS2812 8x32
-Panel has an optional PIO driver; its raw topology, logical corner rendering,
-and perimeter trace are physically established. The new row and column scans
-await physical verification; final clock rendering remains future work.
+Panel has an optional PIO driver; its raw topology, logical geometry proofs,
+and temporary 5x7 glyph rendering are physically established. Its normal
+development runtime now displays presentation-state `HH:MM` using the existing
+simulated GPS/PPS and civil-time path.
 
 ## Repository evidence: current implementation
 
@@ -38,7 +39,7 @@ await physical verification; final clock rendering remains future work.
 | Inherited timebase loss behavior | **Implemented in inherited AAC firmware** | On loss of qualification UTC becomes invalid; source inspection shows no oscillator extrapolation or prolonged holdover. A briefly fresh PPS after the last RMC is not holdover. |
 | Display framework and STDOUT | **Implemented specifically for CE** | `display_selection.hpp` defaults to STDOUT only when no driver is named; explicit selections compose only those drivers. STDOUT uses a bounded USB CDC line and is quiet during development console mode. |
 | Optional PD-2200 driver | **Implemented in inherited AAC firmware; optional in CE** | Explicit VFD selection includes the presentation adapter and verified PD-2200 command driver. It uses UART1 TX on GP4 / physical pin 6 only; RX is disabled and GP5 remains available. MAX3232 labeling and DB9 wiring quirks are external hardware details. The physical display is not the selected consumer hardware. |
-| Selected consumer display | **Implemented bring-up driver; row/column proof pending** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Selected builds own GP8 and one PIO0 state machine. Raw RGB fills/chase, vertical serpentine column topology, four-corner proof, and perimeter trace were physically verified. Logical row and column scans await physical verification. |
+| Selected consumer display | **Implemented; clock-mode behavior physically verified by user** | WS2812 8x32 Panel, one 8-row by 32-column RGB matrix with 256 pixels. Selected builds own GP8 and one PIO0 state machine. Raw RGB transport, vertical serpentine topology, corners, perimeter, rows/columns, temporary 5x7 glyph rendering, and live presentation-state `HH:MM` clock mode were physically verified. Global brightness software control is implemented at serialization; its user tuning remains unverified. |
 | AAC-Bridge interface | **Implemented in inherited AAC firmware** | It was present before Stage 1 as SPI1 publisher/peripheral transport and TIME_SYNC. Stage 1 removes this CE support and its active source dependencies. |
 | Physical timezone button | **Implemented in inherited AAC firmware** | It was present before Stage 1 on GP6 and selected UTC/four U.S. zones. Stage 1 removes the button subsystem for Dad's selected build; timezone/civil-time conversion remains available in presentation code. |
 | Watchdog and USB diagnostics | **Implemented in inherited AAC firmware** | `main.cpp` enables the RP2350 watchdog, queues bounded USB diagnostics, and feeds the watchdog after recurring services. `watchdog_policy.hpp` sets a 4 s timeout and watchdog-boot heartbeat behavior. Software implementation is not proof of a completed physical watchdog test. |
@@ -59,17 +60,17 @@ The current source still determines what is implemented.
 | NEO-7 GPS on UART0 plus separate PPS | **Selected design / approved requirement** | GP0/GP1 UART0 and GP2 PPS match current inherited assignments. The exact receiver configuration and PPS-to-RMC absolute relationship remain subject to receiver-specific confirmation. |
 | Standalone clock; no Wi-Fi or AAC-Bridge | **Selected design / approved requirement** | Dad's selected build has no Wi-Fi, AAC-Bridge, or physical UI button. Stage 1 removes active Bridge and button support from CE. |
 | Compile-time display framework | **Implemented specifically for CE** | `display_selection.hpp` selects STDOUT by default, or exactly the explicitly named driver set. `display_framework::Framework` passes the same read-only snapshot to each selected driver. |
-| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / implemented bring-up driver** | One panel is selected. The development bring-up sends low-level colors, geometry scans, and raw wire-order pixels; final clock rendering remains future work. |
+| WS2812B 8×32 RGB panel, 256 pixels per clock | **Selected design / implemented clock driver** | One panel is selected. The development runtime uses the existing presentation state and temporary 5x7 font for `HH:MM`; clock behavior is physically verified, while brightness tuning is pending. |
 | RP2350 PIO drives WS2812B data | **Implemented; physical waveform unverified** | Selected builds use PIO0 SM0 and a four-instruction program fixed at instruction offset 0. Initialization fails closed if SM0 is already claimed. No DMA is used. |
 | HCT541 level shifting and WS2812 development power | **Wired contract; physical behavior unverified** | GP8 / physical pin 11 drives the already wired SN74HCT541N and approximately 330 Ω series path to panel DIN. The panel is powered by a separate regulated 5 V supply during development, with shared ground. Waveform integrity, current, and thermal behavior remain unmeasured. |
 | GP8 for WS2812B data | **Implemented assignment; physical behavior unverified** | Selected WS2812 builds initialize GP8 through PIO. Default builds leave it untouched. It connects through the external HCT541 buffer to panel DIN. |
 | Raw-index framebuffer independent of physical LED ordering | **Implemented driver storage** | A fixed 256-entry RGB buffer (768 bytes) serializes raw indices in increasing order. Logical coordinates use the physically established top-left-start vertical serpentine column mapping documented below. |
-| Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before connecting real GPS. Display animation and theme demonstrations remain future Stage 2C work. |
-| Fonts, animations, overlays, calendar, special-day themes | **Selected design / approved requirement** | Intended presentation capabilities. Exact content, schedule, rendering resource limits, and precedence are not specified by the repository and remain to be designed. |
+| Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before display composition. The WS2812 clock consumes the resulting shared presentation snapshot. |
+| Fonts, animations, overlays, calendar, special-day themes | **5x7 clock renderer implemented; later design future** | The temporary 5x7 digits/colon render presentation-state `HH:MM` in the WS2812 development profile. Final time glyphs may use more of the 8-pixel height, likely custom ~6x8 or variable-width digits; day-of-month bottom-row color overlay and digit-change transitions (dissolve, scroll, wipe, swirl, or similar) remain future work. |
 | Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C.1 console controls and Stage 2C.2 receiver fault injection are implemented; acquisition/recovery demonstrations and calendar/theme scenarios remain future work. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After initial qualified GPS/PPS lock, local crystal-derived UTC may be estimated in HOLDOVER for at most 24 hours from the last qualified reference. Requalify through normal rules before LOCKED; expire to UNSYNCED at the limit. This is not implemented in inherited firmware, which invalidates UTC on reference loss. Accuracy is uncharacterized and is not GPS-verified. |
-| Conservative brightness and current limiting | **Selected design / approved requirement** | Display must constrain brightness/current for a household appliance. No CE brightness control, power budget, or current limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
-| Prototype light-well grid, diffuser, enclosure | **Proposed but not finalized** | Mechanical/optical development direction. Pitch, depth, divider geometry, diffuser, materials, ventilation, and enclosure dimensions are not specified or physically evaluated in this repository. |
+| Conservative brightness and current limiting | **Brightness implemented; limiter future** | WS2812 development brightness is a software appearance control, range 0..255, default 8. It is not a current limiter and is not physically tuned. No current budget or limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
+| Black pixel grid and diffuser | **Installed and physically evaluated** | User reports distinct square pixels and substantially more useful apparent brightness than the bare panel. Development brightness around 2..16 is useful; 1 is extremely dim and shifts amber toward red, while 2 remains usable but very dim. Exact production setting, grid/diffuser dimensions, enclosure, ventilation, thermal behavior, and final optical calibration remain open. |
 | Separate WS2812 status chain | **Approved architecture; driver not implemented** | Approximately 3–4 discrete LEDs form a separate electrical chain and logical device, never appended to the 256-pixel main panel. The future status driver will own their count, meanings/colors, data GPIO, and update cadence. |
 | Status data path | **Planned hardware direction; GPIO unassigned** | Pico GPIO TBD → spare SN74HCT541N channel → separate approximately 330 Ω series resistor → approximately 3–4 WS2812 LEDs. No Pico GPIO is assigned or reserved before driver implementation. |
 | Status PIO | **Preferred future option; unallocated** | The panel uses PIO0 SM0. A status driver may use PIO0 SM1 if available and may share the loaded four-instruction WS2812 program. SM1 is not currently allocated or reserved. |
@@ -171,24 +172,112 @@ containing clock quality/time, pulse phase data, and selected civil zone. The
 main loop derives it from clock state and passes the same const snapshot to a
 static compile-time composition. The generic framework has no device protocol
 or hardware behavior. STDOUT, the optional PD-2200 driver, and the optional
-WS2812 PIO driver are implemented. The WS2812 development sequence is a
-bring-up renderer; production clock typography/layout awaits later development
-after physical verification of the row and column scans.
+WS2812 PIO driver are implemented. The WS2812 development runtime converts the
+snapshot through the existing civil-time function and renders `HH:MM` with the
+temporary numeric font. Its clock-mode behavior is physically verified by the
+user.
 
 The selected WS2812 driver keeps a 256-entry static RGB buffer with raw access
 and a logical 32x8 helper. Physical observation established raw index 0 at
 top-left, left-to-right column progression, and alternating vertical column
-traversal (first column top-to-bottom). The raw 0..255 chase and basic RGB
-transport and the four-corner proof were physically verified. The development
-sequence starts dark, shows dim red/green/blue fills, returns dark, presents
-the four logical corners individually, returns dark, traces all 76 logical
-border pixels clockwise once with one dim pixel, returns dark, scans rows 0–7
-for 500 ms each and columns 0–31 for 150 ms each, then returns dark and
-repeatedly chases one dim white pixel through raw indices 0..255. The existing
-geometry proofs are physically verified; row/column scans await physical
-verification. Component level is 8/255, not a current limiter.
-The user observed some red coloration during the blue fill; this is recorded
-without investigation. No higher-level effect or clock layout has been added.
+traversal (first column top-to-bottom). The raw chase, RGB transport, corners,
+perimeter, row/column proofs, and temporary 5x7 glyph rendering are physically
+verified. The former fills, geometry scans, fixed text hold, and raw chase are
+retired from normal runtime. Development renders local civil `HH:MM` from
+`presentation::State`, using the current 24-hour configuration and logical
+amber RGB `(255, 96, 0)`. Global software brightness is an unsigned 0..255
+output control, default 8; integer nearest scaling `(channel * brightness +
+127) / 255` produces `(8, 3, 0)` at the default. Scaling occurs during GRB
+serialization, leaves framebuffer colors intact, and does not change the
+panel's 5 V supply. Development console commands `brightness` and
+`brightness <0-255>` report/set it; a changed value retransmits the current
+frame without rebuilding presentation time. Invalid UTC clears the panel;
+otherwise a frame is sent when displayed `HH:MM` changes. Transport remains
+bounded to eight words per service and a nonblocking 1 ms latch interval.
+Brightness is an appearance control, not a current limiter. Gamma/perceptual
+correction, separate current-budget limiting, and ambient-light control remain
+future work. Future effects and themes continue to render logical RGB through
+the same output pipeline. The earlier observation of red coloration during
+the blue fill remains recorded but was not investigated.
+
+### Future WS2812 intensity and output-transfer architecture
+
+Keep rendering policy independent from physical LED conversion. The intended
+logical path is presentation/clock state → font and logical renderer →
+transitions/effects/themes → day-of-month and other overlays → logical RGB
+framebuffer → optional local per-pixel/effect intensity → global display
+brightness → future perceptual/LED transfer correction → WS2812 GRB
+serialization/PIO. The electrical current-budget limiter is a separate
+protection function; its ordering relative to transfer correction is not
+decided and must not be inferred from this conceptual path.
+
+Local/effect intensity belongs to compositing and expresses relative
+pixel-to-pixel intensity inside a frame. For example, a main digit, bright
+trail, dim trail, and afterglow may use local values 255, 128, 64, and 16.
+Global display brightness applies once to the finished composition and sets
+overall apparent clock brightness. Neither value belongs in font glyphs or
+transport behavior. Future fades, dissolves, glow, trails, sparkles, swirls,
+scrolling, and special-day effects should produce logical colors and local
+intensity, then share the same global output stages.
+
+When reducing a pixel's intended/perceived intensity, apply local intensity
+and global brightness before gamma or LED-transfer correction. Do not gamma
+correct a channel and then multiply the corrected code to create a fade. Keep
+effect/color decisions in a consistent perceived-color space as far as
+practical; treat transfer correction as a late physical-output conversion.
+This correction maps desired/perceived channel intensity to the output code;
+it is distinct from global brightness and from electrical current protection.
+
+Mountain Lizard's [“Gamma correction with WS2812
+LEDs”](https://mountainlizard.com/posts/gamma-ws2812/) is a useful reference.
+It describes ordinary
+perceptual gamma, applying brightness/intensity before correction, and a
+WS2812-aware transfer curve based on reported nonlinear low-code behavior in
+actual WS2812-family parts, roughly within the first few tens of output codes.
+Such a curve can assign larger output codes at low perceived levels and
+preserve more dark-color steps than a conventional 8-bit gamma curve. The
+article also cautions that compatible clones may be more linear and may favor
+conventional gamma. The exact LED silicon/version in this BTF panel is
+unknown; do not assume either transfer behavior. Any curve must be understood
+or generated from documented parameters/methodology, attributed, and
+physically compared on this panel. Do not import a third-party LUT as
+unexplained data. Keep conventional gamma available as a development
+comparison if useful. No LUT or correction is implemented.
+
+RGB channel balance/white balance is another independent physical calibration
+option: maximum red, green, and blue codes need not have equal perceived
+brightness. If needed, document and validate channel calibration separately
+from global brightness and transfer correction. No channel calibration is
+implemented.
+
+The user's current optical-stack observation is that the black PETG-style
+pixel grid and diffuser have been installed and tested and produce distinct
+square pixels. Apparent brightness is substantially more useful than on the
+bare panel. Global brightness around 2..16 is currently useful for
+development; 1 is extremely dim and shifts the current amber toward red as
+green quantizes to zero, while 2 remains usable but very dim. These are
+observations, not production calibration; exact production brightness is
+unselected.
+
+When gamma work is authorized, use a development-only selectable output
+transfer mode (off, conventional, and WS2812-adjusted as concepts; command
+names are open). Compare identical clock colors through the installed black
+grid and diffuser at brightness 1, 2, 4, 8, 12, and 16. Judge perceived
+brightness spacing, amber hue, dark-color fidelity, banding, smoothness of
+fades/gradients, local trails/afterglow, and early loss of low green/blue
+channels. Include smooth fades or trails because static digits alone do not
+show transition quality. Select production behavior only from physical
+evidence. This is a future validation plan, not implemented test mode.
+
+Future presentation architecture is intended to layer clock state →
+clock/font renderer → optional transition/effect compositor → special-day
+theme/palette → day-of-month bottom-row color overlay → logical 32x8
+framebuffer → WS2812 transport. Effects and special-day behavior are
+presentation policy and never own authoritative time. Future transitions may
+use old/new logical frames; allocating a second 768-byte buffer is acceptable
+if it makes composition clearer. A taller custom numeric font and transitions
+such as dissolve, scroll, wipe, or swirl remain future work; no effects framework
+is implemented.
 
 The approximately 3–4 status LEDs are separate from the main 256-pixel chain.
 The main panel driver owns its 32x8 geometry, framebuffer/rendering,
@@ -229,7 +318,7 @@ different fields to different backends. Drivers must keep each service bounded;
 independent asynchronous cadence and output state belong to each driver. The
 selected consumer hardware remains one WS2812 8x32 Panel; its low-level driver
 and mapping for the observed topology are implemented while final clock
-rendering awaits physical verification.
+rendering is physically verified; brightness appearance tuning remains open.
 
 To add a backend later, implement a concrete type with `begin(const
 presentation::State&)` and `service(const presentation::State&)`;

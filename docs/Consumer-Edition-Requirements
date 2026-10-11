@@ -273,9 +273,15 @@ The primary display should remain visually legible. Dad's build uses one
 pixels. The optional PIO software has a logical 32x8 mapping helper matching
 the physically observed topology: raw index 0 is top-left, columns progress
 left-to-right, and traversal alternates vertically (first column top-to-bottom).
-Raw 0..255 chase, RGB transport, four-corner proof, and logical perimeter trace
-were physically verified. The implemented logical row and column scans are
-the next hardware proof. Final clock rendering follows physical geometry work.
+Raw 0..255 chase, RGB transport, four-corner proof, logical perimeter trace,
+row/column scans, and temporary 5x7 glyph rendering were physically verified.
+The normal development WS2812 runtime displays `HH:MM` from the shared
+presentation state through the existing civil-time path. The user has
+physically verified the clock, minute rollover, console, transport, and
+rendering. Software global brightness is 0..255 with default 8 and is applied
+to serialized pixel data; it does not vary the 5 V supply and is not a current
+limiter. Appearance tuning through the optical stack remains pending; final
+font design remains future work.
 
 Display hardware is build-specific and replaceable.
 
@@ -297,20 +303,58 @@ panel driver owns GP8 when compiled in.
 The physical panel has visibly responded to the raw-index chase. Logical
 mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
-topology. Development shows dim RGB fills, darkness, each of the four
-logical corners individually, darkness, a single dim pixel tracing the outer
-logical perimeter once, darkness again, then a single dim white pixel chasing
-raw indices 0..255. The corners and perimeter trace are physically verified;
-row and column scans await physical verification. No higher-level effects are
-implemented. The user observed some red coloration during the blue fill; this
-remains an observation only. Row/column physical verification, effects,
-current budgeting, and final typography/layout remain future work.
+topology. Raw chase, RGB transport, corners, perimeter, rows, columns, and
+temporary 5x7 glyph rendering are physically verified. The former fills,
+geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
+runtime. Development now uses the existing simulated GPS/PPS source, normal
+timebase qualification, and presentation state to display civil `HH:MM` in a
+temporary dim amber. The current hour format is 24-hour. The user has
+physically verified clock mode and minute rollover; no effects framework is
+implemented. Software global brightness is implemented for WS2812 output; its
+appearance tuning remains future bench work. The installed black PETG-style
+pixel grid and diffuser have been tested and produce distinct square pixels;
+apparent brightness is substantially more useful than on the bare panel.
+Brightness 1 is extremely dim and shifts current amber toward red as its low
+green output quantizes to zero; 2 remains usable but very dim, and values
+around 2..16 are currently useful for development. These are observations,
+not a production calibration; final production brightness is unselected. The
+red coloration observed during an earlier blue fill is a separate historical
+observation.
+
+Future local effect intensity is per pixel and defines relative frame
+brightness; global display brightness applies to the finished composition.
+Future perceptual/gamma or WS2812 transfer correction belongs late in physical
+output conversion, after desired intensity and global brightness have been
+reduced. This differs from a separate electrical current-budget limiter; its
+ordering relative to transfer correction remains undecided. Neither local
+intensity nor global brightness changes the panel's 5 V supply. Effects,
+transfer correction, current budgeting, and final typography/layout remain
+future work.
+
+The intended future presentation layering is clock state → clock/font renderer
+→ optional transition/effect compositor → special-day theme/palette →
+day-of-month bottom-row color overlay → logical framebuffer → transport.
+Effects and special-day behavior are presentation policy and do not own time.
+Transitions may use old and new logical frames; a second 768-byte buffer is an
+acceptable future choice where useful. A richer full-height numeric font and
+transitions such as dissolve, scroll, wipe, or swirl are not implemented.
 
 Animation style is not fixed. Fades, dissolves, decays, color transitions, and
 rolling effects are candidates for early development-build testing. Fonts,
 overlays, calendar information, and special-day themes may be explored in
 development builds. Production effects, status hierarchy, and exact layouts
 remain to be specified and must preserve clear time-quality indication.
+
+If transfer correction is pursued, development builds should compare no
+correction, conventional gamma, and a characterized WS2812-adjusted curve
+using the normal clock through the installed grid and diffuser at brightness
+1, 2, 4, 8, 12, and 16. Assess brightness spacing, amber hue, dark colors,
+banding, fade/gradient smoothness, trails/afterglow, and early loss of low
+green/blue channels. Include fades or trails as well as static digits. Mode
+and command names remain open. Do not select production behavior or import a
+LUT without understanding its method and physically validating it on this
+panel. See the engineering baseline for the full pipeline and Mountain Lizard
+reference.
 
 The provisional system power target is 5 V / 2 A. Verify actual panel current,
 brightness/current limits, thermal behavior, level shifting, and power margin
@@ -367,11 +411,10 @@ rendering, or hardware ownership. Each driver owns its formatting, buffers,
 cadence, transport, initialization, and bounded nonblocking service. A driver
 must not access or alter authoritative time. The WS2812 driver provides raw
 pixel access and logical 32x8 mapping for the observed vertical serpentine
-column topology. The four-corner proof and perimeter trace are physically
-verified. Logical row/column scans are implemented and await physical
-verification; clock rendering awaits later authorized work. MAX7219 and TFT
-drivers are
-not implemented.
+column topology. The four-corner, perimeter, and row/column geometry proofs are
+physically verified. A temporary 5x7 numeric font and presentation-state
+`HH:MM` renderer are implemented; live clock-mode behavior is physically
+verified by the user. MAX7219 and TFT drivers are not implemented.
 
 The optional PD-2200 driver retains its verified Noritake-compatible command
 behavior. For the verified PD-2200, command `0x0E` clears displayed characters

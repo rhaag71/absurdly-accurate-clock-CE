@@ -8,6 +8,31 @@ int main() {
     assert(sizeof(Pixels) == 768);
     assert(logical_width == 32 && logical_height == 8);
 
+    assert(default_brightness == 8);
+    assert(scaleChannel(173, 0) == 0);
+    assert(scaleChannel(173, 255) == 173);
+    assert(scaleChannel(255, 8) == 8);
+    assert(scaleChannel(96, 8) == 3);
+    assert(scaleChannel(1, 8) == 0);
+    assert(scaleChannel(255, 127) <= 255);
+    const Rgb amber{255, 96, 0};
+    assert(pixels.set(0, amber));
+    const Rgb preserved = pixels.at(0);
+    const uint32_t amber_at_default = pixels.grbWord(0, default_brightness);
+    assert(amber_at_default == ((3u << 24) | (8u << 16)));
+    assert(pixels.at(0).red == preserved.red && pixels.at(0).green == preserved.green &&
+           pixels.at(0).blue == preserved.blue);
+
+    BrightnessRefreshTracker refresh_tracker;
+    assert(!refresh_tracker.consumeChange());
+    setBrightness(16);
+    assert(refresh_tracker.consumeChange()); // Same HH:MM still schedules a retransmit.
+    const uint32_t after_change = brightnessGeneration();
+    assert(brightness() == 16 && brightnessGeneration() == after_change);
+    assert(!refresh_tracker.consumeChange());
+    setBrightness(default_brightness);
+    assert(brightnessGeneration() != after_change); // Driver observes this and dirties output.
+
     bool seen[pixel_count] = {};
     for (int y = 0; y < logical_height; ++y) {
         for (int x = 0; x < logical_width; ++x) {
