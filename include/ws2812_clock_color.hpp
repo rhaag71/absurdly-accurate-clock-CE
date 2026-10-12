@@ -1,15 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include "display_appearance.hpp"
 
 namespace ws2812_display {
-struct ClockColor {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-};
+using ClockColor = display_appearance::Rgb;
 
-constexpr ClockColor default_clock_color = {255, 96, 0};
+constexpr ClockColor default_clock_color = display_appearance::default_clock_color;
 
 inline ClockColor& clockColorStorage() {
     static ClockColor value = default_clock_color;

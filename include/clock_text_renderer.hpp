@@ -1,6 +1,7 @@
 #pragma once
 
 #include "compact_clock_font.hpp"
+#include "display_compositor.hpp"
 #include "presentation_state.hpp"
 
 // Civil conversion stays in presentation; this renderer formats the
@@ -29,13 +30,24 @@ inline bool formatHHMM(const presentation::State& state, char (&text)[6]) {
     return true;
 }
 
+template <typename LogicalFrame, typename Color, typename Background>
+inline bool renderOnBackground(const presentation::State& state,
+                               LogicalFrame& frame, const Color& color,
+                               const Background& background) {
+    char text[6];
+    if (!formatHHMM(state, text)) {
+        frame.fill(background);
+        return false;
+    }
+    return display_compositor::composeClock(
+        frame, text, 32, 0, background,
+        display_compositor::solid({color.red, color.green, color.blue}));
+}
+
 template <typename LogicalFrame, typename Color>
 inline bool render(const presentation::State& state, LogicalFrame& frame,
                    const Color& color) {
-    frame.clear();
-    char text[6];
-    if (!formatHHMM(state, text)) return false;
-    return compact_clock_font::drawCenteredText(
-        frame, text, 32, 0, color);
+    return renderOnBackground(state, frame, color,
+                              display_appearance::Rgb{0, 0, 0});
 }
 }

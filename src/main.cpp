@@ -11,7 +11,9 @@
 #include "display_output.hpp"
 #include "presentation_state.hpp"
 #if defined(AAC_DISPLAY_WS2812)
+#include "display_transfer.hpp"
 #include "ws2812_clock_color.hpp"
+#include "ws2812_test_pattern.hpp"
 #endif
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #include "dev_console.hpp"
@@ -138,6 +140,53 @@ bool discard_rx = true; // Startup delays buffered bytes without arrival timesta
 clock_model::Reception reception;
 
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+#if defined(AAC_DISPLAY_WS2812)
+void writeTransferStatus(dev_console::Console& console) {
+    char line[64];
+    snprintf(line, sizeof(line), "WS2812 transfer: %s",
+             display_appearance::transferModeName(
+                 display_appearance::transferMode()));
+    console.writeLine(line);
+}
+
+void writePatternStatus(dev_console::Console& console) {
+    char line[80];
+    const auto pattern = ws2812_display::testPattern();
+    snprintf(line, sizeof(line), "WS2812 pattern: %s",
+             ws2812_display::testPatternName(pattern));
+    console.writeLine(line);
+    if (ws2812_display::isRamp(pattern))
+        console.writeLine("Ramp codes: 0..31, unity brightness for transfer comparison");
+    else if (pattern == ws2812_display::TestPattern::amber)
+        console.writeLine("Amber reference uses RGB(255,96,0) at brightness 6");
+    else {
+        snprintf(line, sizeof(line), "WS2812 brightness: %u/255",
+                 ws2812_display::brightness());
+        console.writeLine(line);
+    }
+}
+
+void writePresentationStatus(dev_console::Console& console) {
+    char line[64];
+    snprintf(line, sizeof(line), "WS2812 proof: %s",
+             ws2812_display::proofModeName(ws2812_display::proofMode()));
+    console.writeLine(line);
+}
+
+void writeCharacterizationStatus(dev_console::Console& console) {
+    writeTransferStatus(console);
+    writePatternStatus(console);
+    writePresentationStatus(console);
+    const auto color = ws2812_display::clockColor();
+    char line[64];
+    snprintf(line, sizeof(line), "Logical clock RGB: %u %u %u",
+             static_cast<unsigned>(color.red),
+             static_cast<unsigned>(color.green),
+             static_cast<unsigned>(color.blue));
+    console.writeLine(line);
+}
+#endif
+
 void restartSimulator(int64_t utc_seconds) {
     input.abortPending();
     timebase = clock_model::Timebase{};
@@ -162,6 +211,29 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
         char line[48];
         snprintf(line, sizeof(line), "WS2812 brightness set to %u/255", ws2812_display::brightness());
         console.writeLine(line);
+    } else if (command == dev_console::Command::transfer_status ||
+               command == dev_console::Command::transfer_set) {
+        if (command == dev_console::Command::transfer_set)
+            display_appearance::setTransferMode(
+                static_cast<display_appearance::TransferMode>(utc_seconds));
+        writeTransferStatus(console);
+    } else if (command == dev_console::Command::pattern_status ||
+               command == dev_console::Command::pattern_set ||
+               command == dev_console::Command::ramp_set) {
+        if (command != dev_console::Command::pattern_status) {
+            ws2812_display::setProofMode(ws2812_display::ProofMode::normal);
+            ws2812_display::setTestPattern(
+                static_cast<ws2812_display::TestPattern>(utc_seconds));
+        }
+        writePatternStatus(console);
+    } else if (command == dev_console::Command::presentation_status ||
+               command == dev_console::Command::presentation_set) {
+        if (command == dev_console::Command::presentation_set) {
+            ws2812_display::setTestPattern(ws2812_display::TestPattern::clock);
+            ws2812_display::setProofMode(
+                static_cast<ws2812_display::ProofMode>(utc_seconds));
+        }
+        writePresentationStatus(console);
     } else if (command == dev_console::Command::color_status ||
                command == dev_console::Command::color_set) {
         if (command == dev_console::Command::color_set) {
@@ -241,6 +313,9 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
         snprintf(line, sizeof(line), "Console response bytes dropped: %lu",
                  static_cast<unsigned long>(development_console.responseBytesDropped()));
         console.writeLine(line);
+#if defined(AAC_DISPLAY_WS2812)
+        writeCharacterizationStatus(console);
+#endif
     } else if (command == dev_console::Command::fault_status) {
         dev_console::writeFaultStatus(input.faults(), console);
     } else if (command == dev_console::Command::fault_clear) {

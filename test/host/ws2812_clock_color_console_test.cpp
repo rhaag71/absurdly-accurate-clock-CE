@@ -44,7 +44,7 @@ void drain(dev_console::Console& console, char* output, size_t capacity) {
 
 int main() {
     using namespace ws2812_display;
-    assert(clockColor().red == 255 && clockColor().green == 96 && clockColor().blue == 0);
+    assert(clockColor().red == 255 && clockColor().green == 240 && clockColor().blue == 220);
     dev_console::Console console;
     char output[1024];
     feed(console, "\n");
@@ -53,7 +53,7 @@ int main() {
                   "color 0 0 255\ncolor 0 128 255\ncolor 255 0 128\ncolor 0 0 0\n"
                   "color 255 255 255\n");
     drain(console, output, sizeof(output));
-    assert(status_calls == 1 && std::strstr(output, "Logical clock RGB: 255 96 0"));
+    assert(status_calls == 1 && std::strstr(output, "Logical clock RGB: 255 240 220"));
     assert(set_calls == 8 && last_value == 0xffffff);
     const char* invalid[] = {"color -1 0 0\n", "color 256 0 0\n", "color 0 -1 0\n",
         "color 0 0 256\n", "color 1.0 0 0\n", "color 1 2\n", "color 1 2 3 4\n",

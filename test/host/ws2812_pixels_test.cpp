@@ -8,18 +8,24 @@ int main() {
     assert(sizeof(Pixels) == 768);
     assert(logical_width == 32 && logical_height == 8);
 
-    assert(default_brightness == 8);
+    assert(default_brightness == 2);
+    assert(display_appearance::transferMode() ==
+           display_appearance::TransferMode::off);
     assert(scaleChannel(173, 0) == 0);
     assert(scaleChannel(173, 255) == 173);
-    assert(scaleChannel(255, 8) == 8);
-    assert(scaleChannel(96, 8) == 3);
-    assert(scaleChannel(1, 8) == 0);
+    assert(scaleChannel(255, 6) == 6);
+    assert(scaleChannel(96, 6) == 2);
+    assert(scaleChannel(1, 6) == 0);
     assert(scaleChannel(255, 127) <= 255);
     const Rgb amber{255, 96, 0};
     assert(pixels.set(0, amber));
     const Rgb preserved = pixels.at(0);
     const uint32_t amber_at_default = pixels.grbWord(0, default_brightness);
-    assert(amber_at_default == ((3u << 24) | (8u << 16)));
+    assert(amber_at_default == ((1u << 24) | (2u << 16)));
+    assert(pixels.grbWord(0, display_appearance::reference_amber_brightness) ==
+           ((2u << 24) | (6u << 16)));
+    assert(pixels.grbWord(0, default_brightness,
+           display_appearance::TransferMode::off) == amber_at_default);
     assert(pixels.at(0).red == preserved.red && pixels.at(0).green == preserved.green &&
            pixels.at(0).blue == preserved.blue);
 

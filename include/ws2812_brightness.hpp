@@ -1,9 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include "display_appearance.hpp"
 
 namespace ws2812_display {
-constexpr uint8_t default_brightness = 8;
+constexpr uint8_t default_brightness = display_appearance::default_clock_brightness;
 
 // Brightness is an output transform: callers retain the full logical color.
 inline uint8_t scaleChannel(uint8_t channel, uint8_t brightness) {

@@ -152,8 +152,8 @@ temporary 5x7 font remains available as a known-good reference. The full-height
 6x8 candidate was subsequently evaluated and judged too large. The first
 compact variable-width font preserved useful spacing but was physically
 judged visually unattractive, and the subsequent soft compact candidate was
-not accepted. The approved variable-width 5x7 clock font is implemented;
-exact glyph appearance awaits physical evaluation. It draws at y=0..6 and
+not accepted. The approved variable-width 5x7 clock font is implemented and
+its glyph appearance and rendering behavior are physically verified. It draws at y=0..6 and
 leaves row 7 unused, while preserving that row for future overlays.
 
 The selected driver owns GP8, PIO0 SM0, and four instruction words at fixed
@@ -369,12 +369,15 @@ frame behavior remain unverified.
   available for future overlays. The original bring-up 5x7, 6x8, first compact,
   and soft compact candidates remain available. The 6x8 was judged too large;
   earlier compact fonts were not approved. Exact approved-glyph physical
-  evaluation remains pending. Default logical amber `(255, 96, 0)` at
-  brightness 8/255 yields effective components `(8, 3, 0)`. Invalid UTC clears
+  display rendering is physically verified. The physically evaluated reference amber is
+  logical `(255, 96, 0)` at brightness 6; this combination gives the desired
+  appearance through the BTF panel's installed black grid and LCD-derived
+  diffuser. Invalid UTC clears
   the last clock frame.
   Global software brightness is applied during output serialization, with
-  default 8/255 and rounded integer scaling `(channel * brightness + 127) /
-  255`. Development console `brightness` reports it and `brightness <0-255>`
+  default 2/255 and rounded integer scaling `(channel * brightness + 127) /
+  255`. Development console `brightness` reports it and
+  `brightness <0-255>`
   changes it. The development-only `color` and `color <r> <g> <b>` commands
   report/set temporary logical RGB (each channel 0..255); a color-generation
   change redraws and retransmits the same `HH:MM` even when the minute is
@@ -383,12 +386,14 @@ frame behavior remain unverified.
   the current frame after a change. Brightness and color remain independent.
   This is an
   appearance control, not current limiting; panel 5 V supply handling is
-  untouched. Gamma/perceptual correction, a separate current-budget limiter,
-  and ambient-light control remain future work. Current limiting may later
+  untouched. The development build offers `off`, `g2`, and `ws` characterization
+  modes after brightness scaling; production remains off/linear. The two
+  comparison curves are not approved production behavior. A separate
+  current-budget limiter and ambient-light control remain future work. Current limiting may later
   scale outgoing frames against a measured/configured budget; its ordering
-  relative to transfer correction is undecided. The user physically verified
-  clock mode and reports useful brightness through the grid/diffuser, but no
-  final calibration or electrical current measurement is established.
+  relative to transfer correction is undecided. The amber appearance anchor
+  is physically evaluated; electrical current and thermal behavior remain
+  unmeasured.
 - The external path uses the wired SN74HCT541N and approximately 330-ohm series
   resistor to panel DIN. Development uses a separate regulated 5 V panel supply
   and shared ground. Current, signal quality, and thermal behavior are unknown.
@@ -465,3 +470,5 @@ No resource figures in this section are firmware build measurements.
 | 2026-10-11 | Soft compact clock-font candidate and unpadded 12-hour rendering | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 49,352 B flash (Δ +56); 12,336 B `.data + .bss` (Δ 0); 12,608 B including vector table (Δ 0) | Build-derived from PlatformIO summaries; static SRAM includes the unchanged 272-byte vector table in total. The new glyph table and renderer are selected only by WS2812 rendering. Default ELF symbol scans found no clock renderer, numeric clock font, WS2812 driver, or color-control symbols. Existing framebuffer, GP8/PIO0 SM0, four PIO instruction words, transport, color, and brightness path are unchanged. Earlier fonts remain available. New candidate awaits physical evaluation. |
 | 2026-10-11 | Conventional 4x6 compact WS2812 clock font | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (unchanged); `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (unchanged) | `pico2-dev-ws2812`: 49,336 B flash (Δ −16); 12,336 B `.data + .bss` (Δ 0); 12,608 B including vector table (Δ 0) | Build-derived from PlatformIO summaries. Replaced the active soft 5x7 candidate with six-row glyphs (2–4 columns wide) drawn at y=1..6; row 7 remains unused. No second framebuffer or SRAM increase. Prior font headers/tests remain available. Default profile totals are unchanged; font is awaiting user physical evaluation. |
 | 2026-10-12 | Approved variable-width 5x7 glyphs and fixed 12-hour physical face | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); static SRAM including vector table 11,584 B (Δ 0) | `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (Δ 0); static SRAM including vector table 11,904 B (Δ 0) | Build-derived from requested profiles. `pico2-dev-ws2812`: 49,336 B flash / 12,336 B `.data + .bss` / 12,608 B including vector table (Δ 0 from previous WS2812 build). No buffer, GPIO, PIO, DMA, interrupt, or SRAM allocation changed; the glyph table replacement and 12-hour formatter are within the same linked profile footprint. All requested host tests passed. Exact glyph appearance on the panel remains unverified. |
+| 2026-10-12 | Development WS2812 transfer characterization harness | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); `pico2-dev`: 46,520 B / 11,632 B (Δ 0) | `pico2-dev-ws2812`: 51,372 B flash (Δ +2,036); 12,352 B `.data + .bss` (Δ +16); static SRAM including vector table 12,624 B (Δ +16) | Build-derived. Added development-only curve selection and fixed-size color/ramp patterns; no framebuffer or peripheral allocation changed. The 16 B static SRAM increase is mode/pattern generation and refresh state. Production/default profiles remain unchanged. Physical curve comparison remains pending; neither candidate is approved for production. |
+| 2026-10-12 | Soft-white default, named palette, and in-place logical compositor | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); `pico2-dev`: 46,520 B / 11,632 B (Δ 0) | `pico2-dev-ws2812`: 51,972 B flash (Δ +600); 12,360 B `.data + .bss` (Δ +8); static SRAM including vector table 12,632 B (Δ +8) | Build-derived. The compositor reuses the existing 768-byte framebuffer; no extra framebuffer, PIO, DMA, GPIO, or interrupt allocation. Added static proof-mode state and compositing/palette code. Default logical RGB is soft white at brightness 2; transfer remains off in production. Physical proof modes remain to be observed by the user. |

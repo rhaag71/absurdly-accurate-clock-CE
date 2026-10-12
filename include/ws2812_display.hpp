@@ -4,6 +4,10 @@
 #include "presentation_state.hpp"
 #include "ws2812_pixels.hpp"
 #include "ws2812_clock_color.hpp"
+#include "display_transfer.hpp"
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+#include "ws2812_test_pattern.hpp"
+#endif
 
 namespace ws2812_display {
 // The selected driver owns GP8, PIO0 SM0, and its raw-order pixel buffer.
@@ -20,8 +24,16 @@ private:
     uint8_t pio_sm_ = 0;
     uint8_t program_offset_ = 0;
     uint8_t tx_brightness_ = default_brightness;
+    display_appearance::TransferMode tx_transfer_ =
+        display_appearance::TransferMode::off;
     BrightnessRefreshTracker brightness_refresh_;
     ClockColorRefreshTracker color_refresh_;
+    display_appearance::TransferRefreshTracker transfer_refresh_;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    ProofModeRefreshTracker proof_mode_refresh_;
+    TestPatternRefreshTracker test_pattern_refresh_;
+    bool last_frame_was_pattern_ = false;
+#endif
     char last_text_[6] = {};
     bool initialized_ = false;
     bool tx_active_ = false;

@@ -89,9 +89,19 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include src/clock_state.cpp src/display_
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/display_framework_test.cpp -o "$test_dir/display_framework"
 "$test_dir/display_framework"
-c++ -std=c++11 -Wall -Wextra -Werror -I include \
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_PRODUCTION -I include \
     test/host/ws2812_pixels_test.cpp -o "$test_dir/ws2812_pixels"
 "$test_dir/ws2812_pixels"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/display_appearance_test.cpp -o "$test_dir/display_appearance"
+"$test_dir/display_appearance"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/display_compositor_test.cpp -o "$test_dir/display_compositor"
+"$test_dir/display_compositor"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
+    -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
+    test/host/ws2812_transfer_test.cpp -o "$test_dir/ws2812_transfer"
+"$test_dir/ws2812_transfer"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_WS2812 -I include \
     src/dev_console.cpp src/clock_state.cpp test/host/ws2812_brightness_console_test.cpp \
     -o "$test_dir/ws2812_brightness_console"

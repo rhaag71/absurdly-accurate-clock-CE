@@ -5,8 +5,10 @@
 #include "clock_state.hpp"
 #include "gps_input_simulated.hpp"
 #if defined(AAC_DISPLAY_WS2812)
+#include "display_transfer.hpp"
 #include "ws2812_brightness.hpp"
 #include "ws2812_clock_color.hpp"
+#include "ws2812_test_pattern.hpp"
 #endif
 
 namespace dev_console {
@@ -25,6 +27,55 @@ bool exactDigits(const char* value, size_t size) {
     return true;
 }
 #if defined(AAC_DISPLAY_WS2812)
+bool parseTransferMode(const char* text, display_appearance::TransferMode& mode) {
+    if (std::strcmp(text, "off") == 0) mode = display_appearance::TransferMode::off;
+    else if (std::strcmp(text, "g2") == 0) mode = display_appearance::TransferMode::g2;
+    else if (std::strcmp(text, "ws") == 0) mode = display_appearance::TransferMode::ws;
+    else return false;
+    return true;
+}
+
+bool parsePattern(const char* text, ws2812_display::TestPattern& pattern) {
+    using ws2812_display::TestPattern;
+    if (std::strcmp(text, "off") == 0 || std::strcmp(text, "clock") == 0)
+        pattern = TestPattern::clock;
+    else if (std::strcmp(text, "amber") == 0) pattern = TestPattern::amber;
+    else if (std::strcmp(text, "red") == 0 || std::strcmp(text, "r") == 0)
+        pattern = TestPattern::red;
+    else if (std::strcmp(text, "green") == 0 || std::strcmp(text, "g") == 0)
+        pattern = TestPattern::green;
+    else if (std::strcmp(text, "blue") == 0 || std::strcmp(text, "b") == 0)
+        pattern = TestPattern::blue;
+    else if (std::strcmp(text, "white") == 0 || std::strcmp(text, "w") == 0)
+        pattern = TestPattern::white;
+    else if (std::strcmp(text, "cyan") == 0 || std::strcmp(text, "c") == 0)
+        pattern = TestPattern::cyan;
+    else if (std::strcmp(text, "magenta") == 0 || std::strcmp(text, "m") == 0)
+        pattern = TestPattern::magenta;
+    else return false;
+    return true;
+}
+
+bool parseRamp(const char* text, ws2812_display::TestPattern& pattern) {
+    using ws2812_display::TestPattern;
+    if (std::strcmp(text, "r") == 0) pattern = TestPattern::ramp_red;
+    else if (std::strcmp(text, "g") == 0) pattern = TestPattern::ramp_green;
+    else if (std::strcmp(text, "b") == 0) pattern = TestPattern::ramp_blue;
+    else if (std::strcmp(text, "gray") == 0) pattern = TestPattern::ramp_gray;
+    else return false;
+    return true;
+}
+
+bool parseProofMode(const char* text, ws2812_display::ProofMode& mode) {
+    using ws2812_display::ProofMode;
+    if (std::strcmp(text, "norm") == 0) mode = ProofMode::normal;
+    else if (std::strcmp(text, "amber") == 0) mode = ProofMode::amber;
+    else if (std::strcmp(text, "invert") == 0) mode = ProofMode::inverted;
+    else if (std::strcmp(text, "bg") == 0) mode = ProofMode::background;
+    else return false;
+    return true;
+}
+
 bool parseRgb(const char* first, const char* remaining, int64_t& packed) {
     unsigned components[3] = {};
     const char* cursor = first;
@@ -217,6 +268,13 @@ void Console::execute(CommandHandler handler, void* context) {
             write("           brightness <0-255>\r\n");
             write("color      Show or set logical clock RGB (0-255 each)\r\n");
             write("           color <r> <g> <b>\r\n");
+            write("g          Show/set output transfer: off, g2, ws\r\n");
+            write("           g {off|g2|ws}\r\n");
+            write("pat        Show/select full-panel test color; pat off restores clock\r\n");
+            write("           pat {amber|r|g|b|w|c|m|off}\r\n");
+            write("p          Show/select static clock proof: norm, amber, invert, bg\r\n");
+            write("           p {norm|amber|invert|bg}\r\n");
+            writeLine("ramp       Show low-code ramp: ramp {r|g|b|gray} (0-31)");
 #endif
             write("reset      Reset simulator to configured UTC seed\r\n");
             write("fault      Inspect or change simulated GPS/PPS faults\r\n");
@@ -259,6 +317,46 @@ void Console::execute(CommandHandler handler, void* context) {
                     handler(context, Command::color_set, packed, *this);
                 else
                     writeLine("Usage: color <r> <g> <b> (each 0-255)");
+            }
+        } else if (std::strcmp(begin, "g") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::transfer_status, 0, *this);
+            } else {
+                display_appearance::TransferMode mode;
+                if (*args && !*second && parseTransferMode(args, mode) && handler)
+                    handler(context, Command::transfer_set,
+                            static_cast<int64_t>(mode), *this);
+                else
+                    writeLine("Usage: g {off|g2|ws}");
+            }
+        } else if (std::strcmp(begin, "pat") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::pattern_status, 0, *this);
+            } else {
+                ws2812_display::TestPattern pattern;
+                if (*args && !*second && parsePattern(args, pattern) && handler)
+                    handler(context, Command::pattern_set,
+                            static_cast<int64_t>(pattern), *this);
+                else
+                    writeLine("Usage: pat {amber|r|g|b|w|c|m|off}");
+            }
+        } else if (std::strcmp(begin, "ramp") == 0) {
+            ws2812_display::TestPattern pattern;
+            if (*args && !*second && parseRamp(args, pattern) && handler)
+                handler(context, Command::ramp_set,
+                        static_cast<int64_t>(pattern), *this);
+            else
+                writeLine("Usage: ramp {r|g|b|gray}");
+        } else if (std::strcmp(begin, "p") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::presentation_status, 0, *this);
+            } else {
+                ws2812_display::ProofMode mode;
+                if (*args && !*second && parseProofMode(args, mode) && handler)
+                    handler(context, Command::presentation_set,
+                            static_cast<int64_t>(mode), *this);
+                else
+                    writeLine("Usage: p {norm|amber|invert|bg}");
             }
 #endif
         } else if (std::strcmp(begin, "exit") == 0 && !*args) {

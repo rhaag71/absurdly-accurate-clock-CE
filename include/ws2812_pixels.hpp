@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "display_transfer.hpp"
 #include "ws2812_brightness.hpp"
 
 namespace ws2812_display {
@@ -63,11 +64,7 @@ inline bool perimeterStepToXY(std::size_t step, int& x, int& y) {
     return true;
 }
 
-struct Rgb {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-};
+using Rgb = display_appearance::Rgb;
 
 // Raw wire-order RGB storage. Brightness is applied only while serializing,
 // so the stored color values remain unchanged.
@@ -99,12 +96,17 @@ public:
     }
 
     // WS2812 transmits green, red, blue, each most-significant bit first.
-    uint32_t grbWord(std::size_t raw_index, uint8_t brightness = 255) const {
+    uint32_t grbWord(std::size_t raw_index, uint8_t brightness = 255,
+                     display_appearance::TransferMode transfer =
+                         display_appearance::TransferMode::off) const {
         if (raw_index >= pixel_count) return 0;
         const Rgb pixel = pixels_[raw_index];
-        const uint32_t green = scaleChannel(pixel.green, brightness);
-        const uint32_t red = scaleChannel(pixel.red, brightness);
-        const uint32_t blue = scaleChannel(pixel.blue, brightness);
+        const uint32_t green = display_appearance::transferChannel(
+            scaleChannel(pixel.green, brightness), transfer);
+        const uint32_t red = display_appearance::transferChannel(
+            scaleChannel(pixel.red, brightness), transfer);
+        const uint32_t blue = display_appearance::transferChannel(
+            scaleChannel(pixel.blue, brightness), transfer);
         return (green << 24) | (red << 16) | (blue << 8);
     }
 

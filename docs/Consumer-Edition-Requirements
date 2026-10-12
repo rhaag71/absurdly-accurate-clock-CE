@@ -326,20 +326,45 @@ were physically evaluated. The 6x8 candidate was judged too large for the
 product direction. The first compact variable-width candidate preserved
 useful spacing but was physically judged visually unattractive. The approved
 development font is the variable-width 5x7 clock glyph set specified in
-Section 5; exact physical verification remains open. Effects decorate around
+Section 5; its glyph appearance, variable-width layout, and 12-hour physical
+formatting/rendering have been verified. Effects decorate around
 the glyph mask rather than stylizing or replacing numerals. The renderer draws the
-seven glyph rows at y=0..6 and leaves row 7 unused. The widest time sample is
+seven glyph rows at y=0..6 and leaves row 7 unpainted by the glyph layer. For
+Dad's build, (31,7) is reserved for timing/GPS/PPS/satellite health; other
+bottom-row pixels remain available for future presentation use. The widest
+time sample is
 23 columns with the approved glyphs (`10:00` and `12:34`).
 The normal development WS2812 runtime displays `HH:MM` from the shared
 presentation state through the existing civil-time path. The user has
-physically verified earlier clock mode, minute rollover, console, transport,
-and rendering. The exact approved glyph set remains to be observed on hardware.
-Software global brightness is 0..255 with default 8 and is applied
+physically verified clock mode, minute rollover, console, transport, and the
+approved glyph set and formatting/rendering behavior.
+Software global brightness is 0..255 with default 2 and is applied
 to serialized pixel data; it does not vary the 5 V supply and is not a current
-limiter. The compact font centers each formatted string by its actual rendered
-width; see Section 5 for the glyph, layout, and 12-hour contract. The clock
-face omits the leading zero. Appearance
-tuning through the optical stack remains pending.
+limiter. The user has physically evaluated the BTF-LIGHTING 8x32 panel through
+the installed black pixel grid and LCD-derived diffuser: logical RGB(255, 96,
+0) at brightness 6 produces the desired amber appearance. This is the
+reference calibration anchor and named alternate, not the everyday default.
+The everyday default is now soft white RGB(255, 240, 220) at brightness 2.
+Future gamma/transfer correction must preserve the amber anchor's perceived
+appearance unless deliberate physical re-evaluation changes it.
+The calibration is specific to this panel and optical stack and does not
+automatically apply to other panels or optical assemblies. The compact font
+centers each formatted string by its actual rendered width; see Section 5 for
+the glyph, layout, and 12-hour contract. The clock face omits the leading zero.
+
+White presentation values were physically evaluated on this same panel and
+optical stack. Neutral white RGB(255, 255, 255) at brightness 3 looked clean
+and pleasant and may be useful as a low-intensity gray-like reference, though
+it was brighter than likely desired for everyday use at that level. Soft white
+RGB(255, 240, 220) looked close to neutral, softer, clearly visible, and
+non-intrusive; brightness 2 is preferred for it, while brightness 3 also looks
+good. Soft white is now frozen as the current everyday/default presentation.
+Warmer values RGB(255, 220, 180),
+RGB(255, 200, 140), and RGB(255, 180, 100) looked too green or otherwise less
+desirable on this assembly. The established amber anchor RGB(255, 96, 0) at
+brightness 6 remains unchanged and distinct from the soft-white default. These
+appearance choices are specific to the installed panel, black grid, and
+diffuser.
 
 Display hardware is build-specific and replaceable.
 
@@ -355,9 +380,37 @@ The selected physical display must not dictate the timing architecture.
 ## 8. Matrix, Status Pixels, and Visual Effects
 
 The WS2812B matrix is the selected primary display and remains exactly 256
-pixels. Approximately 3–4 discrete WS2812 status LEDs form a separate chain
-with their own data GPIO; they are not appended to the matrix. The selected
-panel driver owns GP8 when compiled in.
+pixels. General AAC-CE architecture continues to allow approximately 3–4
+discrete WS2812 status LEDs on a separate chain and data GPIO; they are never
+appended to the matrix. Dad's current 8x32 build instead reserves two pixels
+in the panel's bottom-right status area and does not plan three external
+status LEDs. The selected panel driver owns GP8 when compiled in.
+
+For Dad's build, logical pixel (31,7), the bottom-right pixel, is reserved for
+combined timing/GPS/PPS/satellite health. It is very dim green when GPS and PPS
+are valid/locked and satellite count is greater than 4; very dim amber when
+GPS and PPS are valid/locked with exactly 4 satellites; and very dim red when
+GPS is invalid, PPS is invalid/not locked, or satellite count is below 4. Four
+satellites is the minimum acceptable count: amber marks that minimum margin,
+green marks healthier margin, and red means part of the required input chain
+has failed (often an antenna-placement issue in ordinary use). This is a quiet,
+unobtrusive status indicator, not an alert.
+
+Pixel (31,6), directly above the health pixel, is reserved for holdover state.
+It is off normally and, only while the clock is actually operating in
+HOLDOVER, is intended to breathe slowly with a soft pinkish/muted red at low
+maximum brightness. The rise and fall should be smooth, without flashing,
+abrupt alerts, or harsh alarm red. Its exact RGB, minimum/maximum brightness,
+and period remain open for later physical tuning. The two pixels have distinct
+meanings: live input health at (31,7), and active holdover at (31,6); therefore
+red health can coexist with a softly breathing holdover indication.
+
+These real-state indicators are intended as final or near-final compositor
+overlays. Future backgrounds, inverted displays, holiday/birthday scenes, and
+decorative effects must not overwrite them. Only (31,7) is on the bottom row;
+(31,6) belongs to the same bottom-right status area, and the rest of row 7
+remains available for other future uses. Other WS2812 builds may adopt this
+on-panel pattern when appropriate. No status-pixel behavior is implemented.
 The physical panel has visibly responded to the raw-index chase. Logical
 mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
@@ -369,7 +422,9 @@ The former fills,
 geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
 runtime. Development now uses the existing simulated GPS/PPS source, normal
 timebase qualification, and presentation state to display civil `HH:MM` in
-logical amber `(255, 96, 0)` by default. The physical face is always 12-hour.
+soft white RGB(255, 240, 220) at brightness 2 by default. Amber RGB(255, 96,
+0) at brightness 6 remains the reference alternate. The physical face is
+always 12-hour.
 The user has physically verified clock mode and minute rollover; no effects
 framework is implemented. Software global brightness is implemented for WS2812 output; its
 appearance tuning remains future bench work. The installed black PETG-style
@@ -377,23 +432,27 @@ pixel grid and diffuser have been tested and produce distinct square pixels;
 apparent brightness is substantially more useful than on the bare panel.
 Brightness 1 is extremely dim and shifts current amber toward red as its low
 green output quantizes to zero; 2 remains usable but very dim, and values
-around 2..16 are currently useful for development. These are observations,
-not a production calibration; final production brightness is unselected. The
-red coloration observed during an earlier blue fill is a separate historical
-observation.
+around 2..16 were development observations. The selected reference is
+RGB(255, 96, 0) at global brightness 6, which produces the desired amber
+appearance on this panel through this grid and diffuser. It is a physically
+verified appearance calibration, not an electrical current limit. Do not
+assume the setting transfers unchanged to a different panel or optical stack.
+The red coloration observed during an earlier blue fill is a separate
+historical observation.
 
 Future local effect intensity is per pixel and defines relative frame
 brightness; global display brightness applies to the finished composition.
-Future perceptual/gamma or WS2812 transfer correction belongs late in physical
-output conversion, after desired intensity and global brightness have been
-reduced. This differs from a separate electrical current-budget limiter; its
-ordering relative to transfer correction remains undecided. Neither local
+The development comparison curves run late in output conversion, after local
+and global brightness scaling. A permanent production transfer correction and
+the separate electrical current-budget limiter remain undecided; limiter
+ordering relative to transfer correction is unresolved. Neither local
 intensity nor global brightness changes the panel's 5 V supply. Effects,
-transfer correction, and current budgeting remain future work; the actual-width
+production transfer correction, and current budgeting remain future work; the actual-width
 centering rule and exact approved glyph geometry are specified in Section 5.
 Effects decorate around the glyph mask rather than distorting or replacing the
-numerals. Primary glyphs render at y=0..6; row 7 remains unused for future
-date/status overlays.
+numerals. Primary glyphs render at y=0..6. For Dad's build, (31,7) is reserved
+for timing health and (31,6) for holdover; the remaining bottom-row pixels
+remain available for future date/overlay use.
 
 The intended future presentation order is authoritative/civil presentation
 time → physical 12-hour formatting → active-font width measurement →
@@ -430,7 +489,7 @@ visible around the glyph mask while black/off clock paint makes the time
 readable as dark cutouts. Later overlay layers may add content such as a
 day-of-month marker, status mark, or holiday accent.
 
-The future logical composition may use this order:
+The implemented minimal logical compositor uses this order:
 
     background/effect layer
         -> clock glyph mask painted with logical RGB clock paint
@@ -438,6 +497,17 @@ The future logical composition may use this order:
         -> logical framebuffer
         -> output processing
         -> display transport
+
+The static presentation palette contains soft white RGB(255, 240, 220), white
+RGB(255, 255, 255), reference amber RGB(255, 96, 0), and red, green, blue,
+cyan, and magenta. The everyday default is soft white at brightness 2; amber
+remains the alternate/reference at brightness 6. Development WS2812 proof
+commands are `p norm`, `p amber`, `p invert`, and `p bg`. They select black
+background/soft-white clock, black background/amber clock, soft-white
+background/black glyphs, and blue background/soft-white clock respectively.
+These are static proofs only. Later scenes and effects build on the same
+logical composition boundary. Transfer correction stays downstream and
+independent; production remains transfer off.
 
 Keep the font geometric and logical. It does not own colors, foreground or
 background policy, effects, holidays, themes, brightness, transfer correction,
@@ -447,10 +517,9 @@ transfer correction and current protection, and becomes black pixel data at
 WS2812 serialization. Do not add transport-specific blackout encoding or a
 special inverse-mode flag.
 
-Black/off remains a valid future overlay/render color; this behavior is not
-implemented in the current renderer. Implement the compositor semantics early,
-after the clock font is selected and the renderer/compositor boundary is
-formalized, and before substantial theme, holiday, or effect work.
+The minimal compositor and black/off versus transparent semantics are
+implemented in the renderer/compositor boundary. Keep this foundation small
+before adding substantial theme, holiday, or effect work.
 
 Animation style is not fixed. Fades, dissolves, decays, color transitions, and
 rolling effects are candidates for early development-build testing. Fonts,
@@ -458,30 +527,67 @@ overlays, calendar information, and special-day themes may be explored in
 development builds. Production effects, status hierarchy, and exact layouts
 remain to be specified and must preserve clear time-quality indication.
 
-If transfer correction is pursued, development builds should compare no
-correction, conventional gamma, and a characterized WS2812-adjusted curve
-using the normal clock through the installed grid and diffuser at brightness
-1, 2, 4, 8, 12, and 16. Assess brightness spacing, amber hue, dark colors,
+Transfer characterization is now available in the WS2812 development build.
+`g off` selects the current identity output and preserves current behavior;
+`g g2` selects a generic inverse-gamma-2 comparison; `g ws` selects an
+illustrative WS2812-aware low-code comparison. Neither candidate is approved
+for production. `status` reports the selected transfer. The generic curve is
+`round(sqrt(code * 255))`; this is inverse gamma 2, which lifts low codes
+(31→89) and explains why it can look too bright. It is the opposite direction
+from squaring encoded values to linearize them. The WS comparison uses a continuous ease-out,
+`code + round(code * (255 - code) / 255)`, which expands low codes and tapers
+to identity at full scale. It is motivated by reported WS2812-family
+low-code behavior and is not characterized for this BTF panel. No LUT is used.
+
+Use `pat amber` for the reference amber at brightness 6; `pat r`, `pat g`,
+`pat b`, `pat w`, `pat c`, and `pat m` show primary/secondary colors. `pat off`
+returns to the clock. `ramp r`, `ramp g`, `ramp b`, and `ramp gray` show
+pre-transfer codes 0..31 across the 32 columns at serializer brightness 255.
+Each x column is exactly `RGB(x,0,0)`, `RGB(0,x,0)`, `RGB(0,0,x)`, or
+`RGB(x,x,x)` for all eight rows, then goes through the selected transfer once.
+These controls clear and fully own the framebuffer; they are development-only
+and return to normal clock rendering without pausing timekeeping.
+
+User-reported physical bench observations on the BTF panel through the current
+grid and diffuser: off-mode amber is correct; off ramps showed no visible
+stepping, with red's last column appearing amber, blue appearing dark, and gray
+bright white. G2 ramps were far too bright and showed no visible stepping;
+blue hue looked more desirable and a last ramp column appeared bright white.
+WS amber hue looked acceptable but too bright; red looked good, general colors
+looked better than off, gray was too bright, and no stepping was visible.
+Source tracing found no channel leak or end-column exception: the prior test
+coverage did not check every pixel and serialized channel. The generator now
+clears first, and tests check all 256 output pixels and transfer words. The
+driver also snapshots transfer mode at frame start; previously, a mode change
+during chunked transmission could mix modes within one frame. This frame
+consistency bug is fixed, but it cannot explain cross-channel amber/white
+appearances. Their physical cause remains unknown. The actual BTF panel plus
+installed black grid and diffuser must decide the result.
+
+Include reference amber RGB(255, 96, 0) at brightness 6 in every comparison;
+future transfer changes must preserve its perceived appearance unless it is
+deliberately re-evaluated physically. Palette selection should wait until
+transfer behavior is chosen. Assess brightness spacing, amber hue, dark colors,
 banding, fade/gradient smoothness, trails/afterglow, and early loss of low
 green/blue channels. Include fades or trails as well as static digits. Mode
 and command names remain open. Do not select production behavior or import a
 LUT without understanding its method and physically validating it on this
-panel. See the engineering baseline for the full pipeline and Mountain Lizard
-reference.
+panel. The `g`, `pat`, and `ramp` command names are fixed for this harness. See
+the engineering baseline for the full pipeline and Mountain Lizard reference.
 
 The provisional system power target is 5 V / 2 A. Verify actual panel current,
 brightness/current limits, thermal behavior, level shifting, and power margin
 by measurement. This target is not a measured result.
 
-The separate status driver will own its LED count, status meanings/colors,
-data GPIO, and update cadence. One indicator is intended for timing quality:
-LOCKED, HOLDOVER, or UNSYNCED, and must not imply live GPS PPS while showing
-HOLDOVER. The intended data path is Pico GPIO TBD through a spare channel on
-the existing SN74HCT541N and a separate approximately 330 Ω series resistor.
-No GPIO is assigned or reserved before the driver is implemented. The drivers
-must not depend on each other; a shared low-level WS2812 transport is optional.
-The main panel remains exactly 256 pixels, independent of status updates and
-panel geometry. No status-pixel code is implemented in Stage 1.
+For general AAC-CE configurations and alternate builds, an external status
+driver remains a valid option. It may own its LED count, meanings/colors, data
+GPIO, and update cadence independently of the panel; the intended example
+path is Pico GPIO TBD through a spare SN74HCT541N channel and separate
+approximately 330 Ω series resistor. No GPIO is assigned or reserved. This is
+not the selected status arrangement for Dad's current build, which reserves
+(31,7) for input health and (31,6) for holdover on the main panel. Neither the
+external driver nor on-panel status behavior is implemented. The main panel
+remains exactly 256 pixels.
 
 The selected electrical direction uses a 74HCT541 5 V level shifter and an
 approximately 330 Ω series resistor. Exact circuit/layout and panel operation

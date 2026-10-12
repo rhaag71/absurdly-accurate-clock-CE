@@ -112,22 +112,28 @@ physical verification.
   exact variable-width 5x7 table in Consumer Edition Requirements Section 5;
   digit 1 is width 3, colon width 1, and spacing is 1. The physical face is
   always unpadded 12-hour time with 12 at midnight/noon and draws at y=0..6.
-  Glyph geometry stays independent of effects. Exact approved-glyph physical
-  evaluation is pending. The former geometry/fill/raw-chase
+  Glyph geometry stays independent of effects. The approved glyphs and
+  formatting have been physically verified. The former geometry/fill/raw-chase
   walkthrough is retired from normal runtime. Development console `color`
   reports the current color and `color <r> <g> <b>` selects temporary logical
   RGB (each channel 0..255); color changes refresh the frame upstream of
-  output brightness. Effects should decorate around the readable glyph mask;
+  output brightness. The physical amber calibration anchor is logical
+  RGB(255, 96, 0) at global brightness 6 on the BTF-LIGHTING 8x32 panel through
+  the installed black grid and LCD-derived diffuser. The everyday default is
+  soft white RGB(255, 240, 220) at brightness 2; amber remains an alternate
+  reference at brightness 6. Future gamma/transfer
+  correction must preserve that perceived appearance unless physically
+  re-evaluated. Brightness remains an appearance control, not a current limit.
+  Effects should decorate around the readable glyph mask;
   glyph shapes stay conventional and independent of effects. WS2812 output
   applies software global
-  brightness (0..255, default 8) while serializing pixels; development builds
+  brightness (0..255, default 2) while serializing pixels; development builds
   expose `brightness` and `brightness <0-255>`. This is an appearance control,
   not a current limiter, and does not vary the panel's 5 V supply.
-- Keep clock glyph geometry independent of its logical RGB paint. In future
-  compositing, black/off paint is opaque RGB(0, 0, 0), while transparent/no-op
-  leaves underlying pixels unchanged; the same glyph mask supports both.
-  Formalize this at the renderer/compositor boundary after font selection and before substantial
-  effects or theme work. Follow [Consumer Edition Requirements, Section 8](docs/Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects).
+- Keep clock glyph geometry independent of its logical RGB paint. The logical
+  compositor applies background, glyph-mask paint, then optional overlay.
+  Black/off paint is opaque RGB(0, 0, 0), while transparent/no-op leaves
+  underlying pixels unchanged; preserve this boundary. Follow [Consumer Edition Requirements, Section 8](docs/Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects).
 - Keep future WS2812 intensity and transfer work downstream of logical
   rendering: effects/local per-pixel intensity, then global brightness, then
   perceptual/LED transfer conversion before serialization. Brightness and
@@ -135,13 +141,22 @@ physical verification.
   If reducing intended visual intensity, scale before transfer correction.
   The future current-budget limiter's ordering relative to transfer
   correction is unresolved; do not implement or prescribe it from this note.
-  WS2812-family low-code behavior must be validated on this panel before using
-  a WS2812-specific curve. See the engineering baseline for the reference and
-  development A/B plan.
-- Future status indication uses a separate chain of approximately 3–4 WS2812
-  LEDs on its own data GPIO and separate driver/module. Do not append them to
-  the 256-pixel panel chain or assign/reserve their GPIO before implementation.
-  PIO0 SM1 is a preferred future option only if available; it is not reserved.
+  Development builds include the characterization-only `g {off|g2|ws}`
+  selector and `pat`/`ramp` patterns. `off` is identity; candidates are not
+  approved for production. Preserve the RGB(255, 96, 0) at brightness 6
+  physical amber anchor through this BTF 8x32 panel's installed black grid and
+  LCD-derived diffuser. The everyday default is soft white RGB(255, 240, 220)
+  at brightness 2; amber at brightness 6 remains the named reference alternate.
+  Keep palette values as logical RGB, independent of transfer selection. See
+  the engineering baseline for comparison formulas and plan.
+- For Dad's current WS2812 8x32 build, reserve panel coordinate (31,7) for
+  timing/GPS/PPS/satellite health and (31,6) for actual holdover indication.
+  These are planned presentation overlays, not implemented behavior. Give
+  them final or near-final priority over future scenes/effects. A separate
+  chain of approximately 3–4 WS2812 status LEDs remains a valid general AAC-CE
+  option for other builds, but is not planned for Dad's build. Do not assign
+  external status GPIO or reserve PIO0 SM1 before implementation; SM1 is only
+  a preferred option if available.
 
 ## Hardware ownership
 
