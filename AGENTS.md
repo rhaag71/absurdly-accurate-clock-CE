@@ -105,7 +105,8 @@ physical verification.
   framework. Each selected driver receives one shared presentation snapshot;
   scheduling remains cooperative and drivers must keep each service call
   bounded. Do not add dynamic registries or heap allocation.
-- The WS2812 driver owns a fixed 768-byte framebuffer and PIO0 SM0 only in
+- The WS2812 driver owns a fixed 768-byte logical framebuffer, a 1,024-byte
+  immutable GRB DMA stream, one claimed DMA channel, and PIO0 SM0 only in
   selected builds. The 32x8 mapping, transport, corners, perimeter, row/column
   scans, temporary 5x7 font, full-height 6x8 candidate, and continuous clock
   mode were physically evaluated. The approved physical clock glyphs are the
@@ -119,7 +120,9 @@ physical verification.
   RGB (each channel 0..255); color changes refresh the frame upstream of
   output brightness. The physical amber calibration anchor is logical
   RGB(255, 96, 0) at global brightness 6 on the BTF-LIGHTING 8x32 panel through
-  the installed black grid and LCD-derived diffuser. The everyday default is
+  the previously evaluated black grid and LCD-derived diffuser. The current
+  optical stack is reported as a light-gray printed grid plus diffuser, so its
+  perceived amber match needs rechecking. The everyday default is
   soft white RGB(255, 240, 220) at brightness 2; amber remains an alternate
   reference at brightness 6. Future gamma/transfer
   correction must preserve that perceived appearance unless physically
@@ -143,20 +146,32 @@ physical verification.
   correction is unresolved; do not implement or prescribe it from this note.
   Development builds include the characterization-only `g {off|g2|ws}`
   selector and `pat`/`ramp` patterns. `off` is identity; candidates are not
-  approved for production. Preserve the RGB(255, 96, 0) at brightness 6
-  physical amber anchor through this BTF 8x32 panel's installed black grid and
-  LCD-derived diffuser. The everyday default is soft white RGB(255, 240, 220)
+  approved for production. Preserve the logical RGB(255, 96, 0) / brightness 6
+  amber reference; its previously observed appearance was through the BTF 8x32
+  panel's black grid and LCD-derived diffuser. The current light-gray printed
+  grid and diffuser have not been re-evaluated against that appearance. The
+  everyday default is soft white RGB(255, 240, 220)
   at brightness 2; amber at brightness 6 remains the named reference alternate.
   Keep palette values as logical RGB, independent of transfer selection. See
   the engineering baseline for comparison formulas and plan.
-- For Dad's current WS2812 8x32 build, reserve panel coordinate (31,7) for
-  timing/GPS/PPS/satellite health and (31,6) for actual holdover indication.
-  These are planned presentation overlays, not implemented behavior. Give
-  them final or near-final priority over future scenes/effects. A separate
-  chain of approximately 3–4 WS2812 status LEDs remains a valid general AAC-CE
-  option for other builds, but is not planned for Dad's build. Do not assign
-  external status GPIO or reserve PIO0 SM1 before implementation; SM1 is only
-  a preferred option if available.
+- For Dad's current WS2812 8x32 build, map local day-of-month 1..31 to
+  (0,7)..(30,7), reserve (31,4) for live GPS/PPS/satellite health, and reserve
+  (31,3) for actual holdover. Compose these persistent informational pixels
+  after scene, glyph, and decorative layers. Holdover is not implemented in
+  the timebase; keep its production indicator off until a real state exists.
+  Development `s good|min|bad|off|live` control must keep forced-off distinct
+  from returning to live GPS/PPS/satellite input. Holdover proof uses a fixed
+  red hue with scalar intensity only. Use stable direct device codes from the
+  local intensity mapping; temporal error diffusion was physically rejected
+  and must not be reintroduced. No holdover serializer brightness override
+  is used. Keep clock/health appearance intact
+  and never refresh/restart the stream until DMA, FIFO drain, and latch finish.
+  Development proof controls may override only
+  these presentation inputs. A separate chain of approximately 3–4 WS2812
+  status LEDs remains a valid
+  general AAC-CE option for other builds, but is not planned for Dad's build.
+  Do not assign external status GPIO or reserve PIO0 SM1 before implementation;
+  SM1 is only a preferred option if available.
 
 ## Hardware ownership
 
@@ -169,12 +184,21 @@ physical verification.
 
 ## Timing holdover
 
-Up to 24 hours of local-oscillator holdover after qualified GPS/PPS is an
-approved future requirement, not implemented behavior. Holdover must remain
-distinguishable from physical GPS lock, must not fabricate valid UTC on cold
-startup, cannot survive power loss without an independent persistent time
-reference, and expires to invalid/unsynchronized state. Do not describe it as
-operational or implement it without an authorized task.
+A 24-hour continuous holdover window after loss of fully qualified GPS/PPS is
+an approved requirement; the real timing state machine remains unimplemented.
+Only complete normal GPS/PPS requalification clears HOLDOVER or
+HOLDOVER_EXPIRED and resets the duration; sentences, satellites, isolated PPS,
+or partial qualification do not. At 24 hours, keep advancing/displaying the
+best available estimate as explicitly unqualified, do not blank/stop the clock,
+and enter HOLDOVER_EXPIRED. The on-panel (31,3) indicator is physically
+approved for this build: pure red codes 1..8, cosine breathing over about 5 s
+with an intentional OFF dwell during the trough. It should flash red after
+expiry until full requalification; cadence is open. The (31,4) health pixel
+continues to report external-source health and may remain red in both states.
+The visual development proof exists; production indication remains inactive
+until the real state is implemented. Holdover cannot survive power loss without
+an independent persistent time reference and cannot be claimed at cold startup.
+Do not implement the state machine without an authorized task.
 
 ## Development console
 

@@ -100,6 +100,15 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
 "$test_dir/display_compositor"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
+    src/display_time.cpp test/host/informational_overlay_test.cpp \
+    -o "$test_dir/informational_overlay"
+"$test_dir/informational_overlay"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    src/clock_state.cpp src/display_time.cpp test/host/holdover_output_test.cpp \
+    -o "$test_dir/holdover_output"
+"$test_dir/holdover_output"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
+    -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
     test/host/ws2812_transfer_test.cpp -o "$test_dir/ws2812_transfer"
 "$test_dir/ws2812_transfer"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_WS2812 -I include \

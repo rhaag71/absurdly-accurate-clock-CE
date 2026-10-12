@@ -66,29 +66,35 @@ UTC is currently qualified against GPS/PPS.
 
 ### HOLDOVER
 
-The clock was previously LOCKED but GPS/PPS authority has subsequently
-been lost.
+HOLDOVER begins only after the clock was fully LOCKED and qualified GPS/PPS
+timing is lost. It is not available before the first successful qualification.
 
-During HOLDOVER, time continues advancing from the MCU's local timing
-source, using the RP2350's crystal-derived local timing. HOLDOVER is permitted
-for at most 24 hours from the last qualified GPS/PPS reference.
+During HOLDOVER, the clock continues advancing its local time estimate using
+the RP2350 crystal-derived timebase. The duration is measured from the loss of
+qualified timing and represents one continuous loss interval. Brief GPS data,
+a satellite-count improvement, an isolated PPS edge, or partial qualification
+does not clear the condition or restart its timer. Only successful completion
+of the established GPS/PPS qualification rules returns the clock to LOCKED and
+clears holdover state and duration. This applies both before and after expiry.
 
-The display must make HOLDOVER distinguishable from LOCKED without
-making the clock unusable.
+The qualified HOLDOVER window lasts 24 continuous hours. If normal
+requalification has not completed by then, enter HOLDOVER_EXPIRED. Continue
+displaying and counting the best available time estimate; do not blank the
+clock or stop its timebase. From expiry onward, display that estimate as
+explicitly unqualified/best-effort. A reset or power interruption does not
+preserve holdover without additional hardware. Never represent estimated local
+time as GPS/PPS-verified.
 
-Reacquisition of GPS/PPS should automatically return the clock to
-LOCKED operation only after the existing GPS/PPS qualification rules succeed.
+HOLDOVER_EXPIRED remains active until full GPS/PPS requalification succeeds.
+Partial observations never reset the 24-hour interval. Successful
+requalification returns to LOCKED, clears the expired/holdover condition, and
+restores the live health presentation.
 
-At 24-hour expiration, estimated time becomes invalid and the clock enters
-UNSYNCED until qualified GPS/PPS returns. A reset or power interruption does
-not preserve holdover without additional hardware. Never represent estimated
-local timing as GPS/PPS-verified timing.
-
-The 24-hour limit is intended to be a compile-time configuration constant,
-defaulting to 24 hours for this build. Holdover accuracy depends on the Pico 2
-oscillator and operating conditions; no guaranteed accuracy may be claimed
-without measurement. The inherited AAC timing engine does not implement
-holdover.
+This state machine and 24-hour transition are requirements, not implemented
+behavior. The inherited AAC timing engine invalidates UTC on reference loss and
+does not extrapolate local time. Accuracy during future holdover depends on the
+Pico 2 oscillator and operating conditions; no guaranteed accuracy may be
+claimed without measurement.
 
 ---
 
@@ -330,8 +336,8 @@ Section 5; its glyph appearance, variable-width layout, and 12-hour physical
 formatting/rendering have been verified. Effects decorate around
 the glyph mask rather than stylizing or replacing numerals. The renderer draws the
 seven glyph rows at y=0..6 and leaves row 7 unpainted by the glyph layer. For
-Dad's build, (31,7) is reserved for timing/GPS/PPS/satellite health; other
-bottom-row pixels remain available for future presentation use. The widest
+Dad's build, row 7 x=0..30 is the local calendar strip and (31,7) remains
+available. The widest
 time sample is
 23 columns with the approved glyphs (`10:00` and `12:34`).
 The normal development WS2812 runtime displays `HH:MM` from the shared
@@ -340,8 +346,8 @@ physically verified clock mode, minute rollover, console, transport, and the
 approved glyph set and formatting/rendering behavior.
 Software global brightness is 0..255 with default 2 and is applied
 to serialized pixel data; it does not vary the 5 V supply and is not a current
-limiter. The user has physically evaluated the BTF-LIGHTING 8x32 panel through
-the installed black pixel grid and LCD-derived diffuser: logical RGB(255, 96,
+limiter. The user previously evaluated the BTF-LIGHTING 8x32 panel through
+the black pixel grid and LCD-derived diffuser: logical RGB(255, 96,
 0) at brightness 6 produces the desired amber appearance. This is the
 reference calibration anchor and named alternate, not the everyday default.
 The everyday default is now soft white RGB(255, 240, 220) at brightness 2.
@@ -352,8 +358,8 @@ automatically apply to other panels or optical assemblies. The compact font
 centers each formatted string by its actual rendered width; see Section 5 for
 the glyph, layout, and 12-hour contract. The clock face omits the leading zero.
 
-White presentation values were physically evaluated on this same panel and
-optical stack. Neutral white RGB(255, 255, 255) at brightness 3 looked clean
+White presentation values were physically evaluated on this panel through the
+then-installed black grid and diffuser. Neutral white RGB(255, 255, 255) at brightness 3 looked clean
 and pleasant and may be useful as a low-intensity gray-like reference, though
 it was brighter than likely desired for everyday use at that level. Soft white
 RGB(255, 240, 220) looked close to neutral, softer, clearly visible, and
@@ -363,8 +369,10 @@ Warmer values RGB(255, 220, 180),
 RGB(255, 200, 140), and RGB(255, 180, 100) looked too green or otherwise less
 desirable on this assembly. The established amber anchor RGB(255, 96, 0) at
 brightness 6 remains unchanged and distinct from the soft-white default. These
-appearance choices are specific to the installed panel, black grid, and
-diffuser.
+appearance choices are specific to the panel and optical stack used for those
+observations. The current stack is reported as a light-gray printed grid plus
+diffuser; matching appearance through this changed stack has not been
+reverified, and overlay colors need physical evaluation there.
 
 Display hardware is build-specific and replaceable.
 
@@ -386,38 +394,117 @@ appended to the matrix. Dad's current 8x32 build instead reserves two pixels
 in the panel's bottom-right status area and does not plan three external
 status LEDs. The selected panel driver owns GP8 when compiled in.
 
-For Dad's build, logical pixel (31,7), the bottom-right pixel, is reserved for
-combined timing/GPS/PPS/satellite health. It is very dim green when GPS and PPS
-are valid/locked and satellite count is greater than 4; very dim amber when
-GPS and PPS are valid/locked with exactly 4 satellites; and very dim red when
-GPS is invalid, PPS is invalid/not locked, or satellite count is below 4. Four
-satellites is the minimum acceptable count: amber marks that minimum margin,
-green marks healthier margin, and red means part of the required input chain
-has failed (often an antenna-placement issue in ordinary use). This is a quiet,
-unobtrusive status indicator, not an alert.
+For Dad's build, the local civil day-of-month is a steady provisional blue marker on row 7:
+day 1 maps to (0,7), day 15 to (14,7), and day 31 to (30,7), exactly one
+marker at a time. Coordinate (31,7) remains available. The marker is subordinate
+to the clock. Pink was rejected on the current panel and light-gray grid plus
+diffuser; provisional blue is now used and its exact RGB remains open for
+physical tuning.
 
-Pixel (31,6), directly above the health pixel, is reserved for holdover state.
-It is off normally and, only while the clock is actually operating in
-HOLDOVER, is intended to breathe slowly with a soft pinkish/muted red at low
-maximum brightness. The rise and fall should be smooth, without flashing,
-abrupt alerts, or harsh alarm red. Its exact RGB, minimum/maximum brightness,
-and period remain open for later physical tuning. The two pixels have distinct
-meanings: live input health at (31,7), and active holdover at (31,6); therefore
-red health can coexist with a softly breathing holdover indication.
+Timing/GPS/PPS/satellite health uses (31,4), in very low output intensity:
+green when GPS is valid, PPS is present and locked, and satellite count is
+greater than 4; amber at exactly 4 satellites with valid GPS/PPS; and muted
+soft red when GPS is invalid, PPS is invalid/not locked, or satellite count is
+below 4. Four is the minimum acceptable satellite count. This is a calm status
+mark, not an alarm beacon. It reports external timing-source health and may
+remain red throughout HOLDOVER and HOLDOVER_EXPIRED.
 
-These real-state indicators are intended as final or near-final compositor
-overlays. Future backgrounds, inverted displays, holiday/birthday scenes, and
-decorative effects must not overwrite them. Only (31,7) is on the bottom row;
-(31,6) belongs to the same bottom-right status area, and the rest of row 7
-remains available for other future uses. Other WS2812 builds may adopt this
-on-panel pattern when appropriate. No status-pixel behavior is implemented.
+The separate holdover-quality pixel is at (31,3). Its physically approved
+presentation for Dad's current panel is pure red, with stable direct codes 1..8,
+a cosine breathe of approximately 2.5 seconds up and down, and an intentional
+OFF dwell around the trough, for an approximately 5-second full cycle. The
+current DMA-based WS2812 transport is also physically approved for this build.
+These values form this build's presentation baseline; they are not evidence
+that timing holdover is implemented.
+
+Holdover pixel semantics:
+- OFF: timing is not in HOLDOVER (including LOCKED and UNSYNCED).
+- Breathing red: external timing is lost but remains within the qualified
+  24-hour HOLDOVER window.
+- Flashing red: HOLDOVER_EXPIRED; displayed time remains best-effort and
+  unqualified. Flash cadence remains a presentation tuning parameter.
+
+The visual development proof (`h on` / `h off`) exists. The real holdover
+state/timer and HOLDOVER_EXPIRED behavior do not exist in firmware, so
+production holdover indication remains inactive. Proof controls do not change
+the authoritative timing state.
+
+Current presentation RGB values are calendar blue (0,0,255), approved health
+green (0,255,32), health amber (255,128,0), and muted health red (160,32,40).
+Calendar blue is acceptable for now. Health colors/thresholds remain unchanged.
+The previous holdover RGB(255,128,160), output-brightness 2..24 pass was
+physically rejected: wrong hue, excessive peak, visible stepping, and
+intermittent unrelated display flicker. It had only 23 final RGB states during
+a nominal half-cycle. The earlier pink calendar marker was also rejected.
+
+Pure red RGB(255,0,0) and the DMA transport were subsequently physically
+liked (no unrelated corruption observed yet), but temporal error diffusion
+between red codes 0/1/2 was rejected: obvious stepping, uneven apparent rate and
+visible temporal structure. It is removed; each frame now has a stable code.
+
+The current holdover preserves pure red and a 5 second cosine cycle. The
+previous direct 0..10 mapping looked clunky at the low end. Physical
+characterization found codes above 3 increasingly bright; code 10 was acceptable
+but too bright as the breathing peak. The approved range is 1..8. The
+mapping sends envelope values at or below 0.5 to OFF, then normalizes the
+active portion as
+`active = (envelope - 0.5) / 0.5` and maps it with
+`red = 1 + round(7 * active^2)`. Green and blue remain zero. This uses eight
+nonzero levels (1..8), with an intentional OFF dwell of about 2.5 seconds
+per cycle. The 1-to-OFF edge is one code; active-range
+steps are at most one code at nominal 10 ms samples, including OFF entry/exit.
+The code-1 plateau is about 0.21 seconds on each side. This materially reduces
+the dimmest nonzero dwell by making OFF the trough state. The current breathing
+shape and OFF dwell have been physically approved for Dad’s panel.
+
+Development `lvl <0-32>` isolates only (31,3) in stable red on a dark panel,
+using exact device codes independent of brightness/transfer. `lvl off` restores
+the normal clock/overlays; `h on`/`h off` also exit level characterization.
+The 1..8 range and breathing presentation have now been physically approved
+for Dad’s current panel. This approval concerns presentation only; it does not mean the real timing
+state or 24-hour transition is implemented. Health/calendar inputs and
+authoritative timing are untouched. Palette, global gamma and unrelated
+presentation are unchanged.
+
+All final output RGB is prepared before a frozen 1,024-byte GRB stream is
+handed to DMA. The ordinary serializer has no holdover brightness override.
+The holdover output is defined directly in device-code units after the ordinary
+brightness/transfer preparation; other pixels retain their original path and
+clock global brightness remains 2. The stream is immutable until DMA, the
+maximum 270 us FIFO/OSR tail, and a 1 ms reset-low interval complete. Compositor
+refreshes are deferred until then. PIO-DREQ-paced DMA removes CPU chunk gaps
+that could starve the FIFO and latch partial frames. This is a concrete
+source-level corruption mechanism, not an instrumentally proven explanation
+of each observed panel glitch. PIO now derives the intended 800 kbit/s clock;
+the previous divider actually produced 1 Mbit/s. No timing authority or real
+holdover architecture is changed; production holdover stays off.
+
+Compose persistent informational pixels last:
+
+    background / scene -> clock glyph paint -> decorative effects / overlays
+        -> persistent calendar and status pixels -> logical framebuffer
+
+The local date marker and real-state status marks must remain visible and
+semantically correct over normal, amber, inverted, and solid-background proof
+modes. Scene/background logic must not recolor them. They must survive future
+holiday/birthday scenes, fireworks, balloons, glow, dissolve, roll, and other
+decorative effects. This on-panel arrangement is specific to Dad's 8x32 build
+and may be reused by other WS2812 clocks; the broader AAC-CE architecture still
+allows separate external status LEDs/chains or other status arrangements.
+Colors and low-intensity appearance remain subject to evaluation on the
+current panel and optical stack. No external status hardware is added.
+Development proof controls are `s {good|min|bad|off|live}`, `h {on|off}`, and
+`day {1-31|live}`. They override presentation inputs only and do not alter
+GPS/PPS qualification or authoritative UTC. `s off` forces the health pixel
+black; only `s live` restores live health input. `h off` restores the actual
+holdover source (currently absent, so it remains off).
 The physical panel has visibly responded to the raw-index chase. Logical
 mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
 topology. Raw chase, RGB transport, corners, perimeter, rows, columns, the
 temporary 5x7 font, and the full-height 6x8 candidate were physically
 evaluated. The 6x8 candidate was judged too large. The approved clock-specific
-variable-width 5x7 glyph table is implemented, pending physical verification.
+variable-width 5x7 glyph table is implemented and physically verified.
 The former fills,
 geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
 runtime. Development now uses the existing simulated GPS/PPS source, normal
@@ -450,9 +537,9 @@ intensity nor global brightness changes the panel's 5 V supply. Effects,
 production transfer correction, and current budgeting remain future work; the actual-width
 centering rule and exact approved glyph geometry are specified in Section 5.
 Effects decorate around the glyph mask rather than distorting or replacing the
-numerals. Primary glyphs render at y=0..6. For Dad's build, (31,7) is reserved
-for timing health and (31,6) for holdover; the remaining bottom-row pixels
-remain available for future date/overlay use.
+numerals. Primary glyphs render at y=0..6. For Dad's build, row 7 x=0..30 is
+the day marker, (31,7) is available, (31,4) is timing health, and (31,3) is
+holdover.
 
 The intended future presentation order is authoritative/civil presentation
 time → physical 12-hour formatting → active-font width measurement →
@@ -584,10 +671,13 @@ driver remains a valid option. It may own its LED count, meanings/colors, data
 GPIO, and update cadence independently of the panel; the intended example
 path is Pico GPIO TBD through a spare SN74HCT541N channel and separate
 approximately 330 Ω series resistor. No GPIO is assigned or reserved. This is
-not the selected status arrangement for Dad's current build, which reserves
-(31,7) for input health and (31,6) for holdover on the main panel. Neither the
-external driver nor on-panel status behavior is implemented. The main panel
-remains exactly 256 pixels.
+not the selected status arrangement for Dad's current build, which uses row 7
+x=0..30 for the calendar marker, (31,4) for input health, and (31,3) for
+holdover on the main panel. Calendar and health rendering are implemented;
+the breathing-red visual proof is physically approved, but holdover remains
+proof-only because no actual holdover state is implemented. No
+external status driver is implemented. The main panel remains exactly 256
+pixels.
 
 The selected electrical direction uses a 74HCT541 5 V level shifter and an
 approximately 330 Ω series resistor. Exact circuit/layout and panel operation
@@ -740,10 +830,11 @@ On a cold boot:
 4. Remain UNSYNCED until the existing qualification rules establish
    authoritative UTC.
 5. Enter LOCKED state.
-6. HOLDOVER is required after loss of previously qualified authority, but is
-   limited to 24 hours from the last qualified reference, then expires to
-   UNSYNCED. It is not implemented in Stage 1. On return of GPS/PPS, repeat the
-   existing qualification before LOCKED.
+6. HOLDOVER is required after loss of previously qualified authority for 24
+   continuous hours, measured from loss. Only complete GPS/PPS requalification
+   clears the condition. Then enter HOLDOVER_EXPIRED, keep displaying/counting
+   best-effort time as unqualified, and flash the holdover pixel until full
+   requalification. The state machine is not implemented.
 
 Do not manufacture apparently valid wall-clock time before first
 synchronization.

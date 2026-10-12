@@ -12,6 +12,7 @@
 #include "presentation_state.hpp"
 #if defined(AAC_DISPLAY_WS2812)
 #include "display_transfer.hpp"
+#include "informational_overlay.hpp"
 #include "ws2812_clock_color.hpp"
 #include "ws2812_test_pattern.hpp"
 #endif
@@ -234,6 +235,26 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
                 static_cast<ws2812_display::ProofMode>(utc_seconds));
         }
         writePresentationStatus(console);
+    } else if (command == dev_console::Command::status_proof_set) {
+        ws2812_display::setTestPattern(ws2812_display::TestPattern::clock);
+        const auto proof = static_cast<informational_overlay::HealthProof>(
+            static_cast<uint8_t>(utc_seconds));
+        informational_overlay::setHealthProof(proof);
+        console.writeLine("Overlay health proof updated (timebase unchanged)");
+    } else if (command == dev_console::Command::holdover_proof_set) {
+        ws2812_display::setTestPattern(ws2812_display::TestPattern::clock);
+        informational_overlay::setHoldoverProof(
+            utc_seconds ? informational_overlay::HoldoverProof::on
+                        : informational_overlay::HoldoverProof::live);
+        console.writeLine("Overlay holdover proof updated (timebase unchanged)");
+    } else if (command == dev_console::Command::level_proof_set) {
+        ws2812_display::setTestPattern(ws2812_display::TestPattern::clock);
+        informational_overlay::setLevelProof(static_cast<int>(utc_seconds));
+        console.writeLine("Stable red level proof updated (lvl off restores overlays)");
+    } else if (command == dev_console::Command::day_proof_set) {
+        ws2812_display::setTestPattern(ws2812_display::TestPattern::clock);
+        informational_overlay::setDayProof(static_cast<uint8_t>(utc_seconds));
+        console.writeLine("Calendar marker proof updated (timebase unchanged)");
     } else if (command == dev_console::Command::color_status ||
                command == dev_console::Command::color_set) {
         if (command == dev_console::Command::color_set) {

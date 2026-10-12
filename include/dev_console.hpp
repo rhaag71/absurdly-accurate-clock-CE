@@ -14,6 +14,7 @@ enum class Command : uint8_t {
     brightness_status, brightness_set, color_status, color_set,
     transfer_status, transfer_set, pattern_status, pattern_set, ramp_set,
     presentation_status, presentation_set,
+    status_proof_set, holdover_proof_set, day_proof_set, level_proof_set,
 };
 using CommandHandler = void (*)(void*, Command, int64_t, Console&);
 

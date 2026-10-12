@@ -100,7 +100,11 @@ public:
                      display_appearance::TransferMode transfer =
                          display_appearance::TransferMode::off) const {
         if (raw_index >= pixel_count) return 0;
-        const Rgb pixel = pixels_[raw_index];
+        return grbWordForColor(pixels_[raw_index], brightness, transfer);
+    }
+
+    uint32_t grbWordForColor(Rgb pixel, uint8_t brightness,
+                             display_appearance::TransferMode transfer) const {
         const uint32_t green = display_appearance::transferChannel(
             scaleChannel(pixel.green, brightness), transfer);
         const uint32_t red = display_appearance::transferChannel(

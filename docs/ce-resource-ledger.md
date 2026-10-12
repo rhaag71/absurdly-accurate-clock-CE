@@ -156,10 +156,11 @@ not accepted. The approved variable-width 5x7 clock font is implemented and
 its glyph appearance and rendering behavior are physically verified. It draws at y=0..6 and
 leaves row 7 unused, while preserving that row for future overlays.
 
-The selected driver owns GP8, PIO0 SM0, and four instruction words at fixed
+At the prior milestone, the selected driver owned GP8, PIO0 SM0, and four instruction words at fixed
 offset 0. It checks SM0 before claiming it; a conflict leaves GP8 low and
-stops initialization. It uses no DMA and adds no interrupt. At 150 MHz,
-divider 15 gives a 10 MHz PIO clock; ten cycles encode each 800 kHz bit.
+stops initialization. That CPU-chunked transport used no DMA. Its divider 15 at 150 MHz
+actually gave 1 Mbit/s, despite the former 800 kHz comment. This historical
+transport is superseded by the final holdover correction below.
 T0H/T0L are 3/7 cycles; T1H/T1L are 6/4 cycles. The service loop queues at
 most eight 24-bit pixel words per application pass and uses a nonblocking 1 ms
 interval after the final FIFO write. These are source/build-derived values;
@@ -209,7 +210,7 @@ selected backend implementation.
 | GP4 | Optional PD-2200 UART1 TX (`Serial2`) through MAX3232 | Unallocated | Unallocated | Claimed only when `AAC_DISPLAY_VFD` is selected. |
 | GP5 | Unassigned / available | Unallocated | Unallocated | VFD has no RX GPIO; `Serial2.setRX(-1)` disables UART1 RX when VFD is selected. |
 | GP8 | WS2812 DATA | Unallocated | Active only in `pico2-dev-ws2812` | Set low as GPIO before PIO mux; external SN74HCT541N and approximately 330-ohm resistor connect to panel DIN. |
-| Separate WS2812 status DATA | GPIO TBD | Unallocated | Unallocated | Planned separate chain of approximately 3–4 status LEDs, through another SN74HCT541N channel and its own approximately 330-ohm resistor. No pin is assigned or reserved before driver implementation. |
+| Separate WS2812 status DATA | GPIO TBD | Unallocated | Unallocated | General AAC-CE option for other builds; not planned for Dad's build, which uses on-panel informational marks. No pin is assigned or reserved. |
 | GP6, GP9–GP22 | No current CE assignment identified | Unassigned | Unassigned | GP8 is separately listed above. No peripheral use is inferred from RP2350 capability. |
 | Board-defined `LED_BUILTIN` | Heartbeat output in `main.cpp` | Active | Active | Source uses the board macro; no numeric GPIO is assigned in project pin map, so the exact mapping is not asserted here. |
 
@@ -232,7 +233,7 @@ established by this ledger.
 | PWM | Unallocated by application | No application PWM setup was found. |
 | PIO blocks / state machines | No application allocation in defaults | `pico2-dev-ws2812` selects PIO0 SM0 explicitly (`pio_sm_is_claimed` then `pio_sm_claim`). If SM0 is already claimed, initialization leaves GP8 low and returns without starting the panel. PIO0 SM1 is not allocated or reserved; it is only a preferred future option for the separate status driver if available. |
 | PIO instruction memory | Unallocated by default; four words in selected profile | The WS2812 program is fixed at PIO0 instruction offset 0 and uses four of 32 PIO0 instruction words. No application PIO program competes in this profile. |
-| DMA channels | No application allocation found; framework ownership not fully verified | No application DMA claim/allocation was found. Do not infer free-channel count until framework and runtime ownership are inspected. |
+| DMA channels | None in default profiles; one in selected WS2812 profile | Driver claims one unused channel at initialization, uses 32-bit reads with PIO0 SM0 TX DREQ and fixed FIFO write address; no IRQ. Claim failure leaves the display inactive without affecting timing. Channel number is runtime-claimed, not hardcoded; framework ownership remains incompletely inventoried. |
 
 The framework contains peripheral support code, and framework-owned USB,
 timer, interrupt, or DMA activity may exist outside application source. This
@@ -257,7 +258,7 @@ second time.
 | RMC parser line storage | 128 bytes | Both profiles |
 | GGA parser line storage | 128 bytes | Both profiles |
 | STDOUT pending output | 112-byte fixed line buffer, replaceable by current state; each service submits at most one whole line when CDC has room | Both default profiles |
-| WS2812 RGB framebuffer | 256 × 3-byte RGB values = 768 bytes; current `display` composition symbol is 796 bytes including driver state; PIO instruction image adds 8 bytes | `pico2-dev-ws2812` only; absent from default images |
+| WS2812 RGB framebuffer and driver state | 256 × 3-byte RGB values = 768 bytes; latest `display` symbol is 1,868 bytes including the 1,024-byte prepared GRB DMA stream and state (build-derived from ELF); PIO instruction image adds 8 bytes | `pico2-dev-ws2812` only; absent from default images |
 | VFD frame and output command | Two 21-byte rows and 5-byte maximum command, from `clock_display::Frame`/`Output` | VFD-selected builds only; absent from defaults |
 | GPS source, timebase, reception and display objects | Persistent globals in `src/main.cpp`; included in ELF totals. Aggregate per-object attribution was not established. | Profile-dependent source; shared timebase/display |
 
@@ -294,7 +295,7 @@ measured hardware timing or CPU-utilization results.
 | Simulator schedule | 1,000,000 µs PPS period; RMC starts 200,000 µs after its pulse; events over 20,000 µs late are dropped | Development-only synthetic timing; not evidence of physical timing accuracy. |
 | Simulated fault schedules | EARLY RMC starts at 5,000 µs after PPS (first byte timestamp 6,041 µs); LATE starts at 880,000 µs (CR completion 916,458 µs); LATE omits GGA | Deterministic development-only schedules, verified in native virtual-time tests. Not physical receiver measurements. |
 | Development console input/output | Up to 32 input bytes and 64 output bytes per loop | Bounded USB service; no measured USB throughput or timing margin. |
-| Display output | STDOUT submits at most one bounded line per service; VFD emits at most one payload byte per service after bounded startup command batches; WS2812 queues no more than eight words per service and uses a 1 ms nonblocking latch interval | Software service work is bounded; USB/UART/PIO electrical behavior is hardware dependent. |
+| Display output | STDOUT submits at most one bounded line per service; VFD emits at most one payload byte per service after bounded startup command batches; WS2812 prepares one bounded 256-word frame, transfers it with DREQ-paced DMA, and polls a conservative 270 us FIFO/OSR tail plus 1 ms latch; holdover phase is sampled at target 100 Hz; unchanged codes do not retransmit | Software service work is bounded; USB/UART/PIO electrical behavior is hardware dependent. |
 | Watchdog | 4,000 ms timeout; recurring feed at end of completed main-loop services | Hardware reset protection is implemented. Worst-case feed interval and physical reset behavior are not measured by these builds. |
 
 No loop-frequency, interrupt-latency, UART-overrun, USB-throughput, CPU-load,
@@ -338,18 +339,23 @@ frame behavior remain unverified.
 ### Optional backend: one 8x32 WS2812 RGB panel
 
 - The selected driver owns GP8 (Pico 2 physical pin 11), PIO0 SM0, four PIO
-  instruction words, and a 768-byte fixed RGB buffer. Its program is fixed at
+  instruction words, a 768-byte fixed RGB buffer, and a 1,024-byte immutable
+  GRB stream. Its program is fixed at
   offset 0; initialization checks that SM0 is available before claiming it.
-- No DMA channel or interrupt is used. Pixels serialize as WS2812 GRB, most
+- One unused DMA channel is claimed only in selected WS2812 builds; no
+  interrupt is added. Pixels serialize as WS2812 GRB, most
   significant bit first. Raw physical index access remains available. The
   logical 32x8 mapping matches the physically established topology: raw index
   zero at top-left, columns progress left-to-right, and traversal alternates
   vertically, starting top-to-bottom in the first column.
-- At the configured 150 MHz system clock, PIO divider 15 yields 10 MHz and ten
-  cycles per bit (800 kHz). T0H/T0L are 3/7 cycles; T1H/T1L are 6/4 cycles.
-  The driver waits nonblockingly for 1 ms after its final FIFO write before
-  sending another frame, including FIFO drain and a conservative reset-low
-  interval.
+- PIO clock is derived from the current system clock for 800 kbit/s: at
+  150 MHz, divider 18.75 gives 8 MHz, ten cycles per bit. T0H/T0L are
+  3/7 cycles (0.375/0.875 us), T1H/T1L 6/4 (0.75/0.5 us), calculated.
+  The prior divider 15 produced 1 Mbit/s. New waveform/physical verification
+  is pending. DREQ-paced DMA avoids CPU/USB gaps between pixels.
+- DMA completion does not imply wire completion. Output words remain locked
+  through an additional worst-case 9-word FIFO/OSR drain (270 us) and then
+  1 ms reset-low interval. No blocking wait or second RGB framebuffer exists.
 - Development starts dark, shows fixed component-8 red, green, and blue fills,
   returns dark, presents red/green/blue/yellow logical corners one at a time
   (1.8 s each), returns dark, traces all 76 logical perimeter pixels clockwise
@@ -364,15 +370,17 @@ frame behavior remain unverified.
   `presentation::State`, using its UTC validity and zone. The physical face
   always uses unpadded 12-hour time, with midnight/noon as 12. The approved
   5x7 clock glyphs use declared widths 3..5 for digits and 1 for the colon,
-  and center by measured string width. Glyphs draw at y=0..6; row 7 is unused
-  by the primary time renderer and remains
-  available for future overlays. The original bring-up 5x7, 6x8, first compact,
+  and center by measured string width. Glyphs draw at y=0..6; the primary time
+  renderer leaves row 7 unpainted. Dad's build uses row 7 x=0..30 for its
+  local calendar marker, leaves (31,7) free, and uses (31,4)/(31,3) for timing
+  health/holdover. The original bring-up 5x7, 6x8, first compact,
   and soft compact candidates remain available. The 6x8 was judged too large;
   earlier compact fonts were not approved. Exact approved-glyph physical
-  display rendering is physically verified. The physically evaluated reference amber is
-  logical `(255, 96, 0)` at brightness 6; this combination gives the desired
-  appearance through the BTF panel's installed black grid and LCD-derived
-  diffuser. Invalid UTC clears
+  display rendering is physically verified. The preserved reference amber is
+  logical `(255, 96, 0)` at brightness 6; its desired appearance was observed
+  through the BTF panel's earlier black-grid/LCD-diffuser stack. The user now
+  reports a light-gray printed grid plus diffuser; matching amber appearance
+  through this current stack has not been reverified. Invalid UTC clears
   the last clock frame.
   Global software brightness is applied during output serialization, with
   default 2/255 and rounded integer scaling `(channel * brightness + 127) /
@@ -394,16 +402,47 @@ frame behavior remain unverified.
   relative to transfer correction is undecided. The amber appearance anchor
   is physically evaluated; electrical current and thermal behavior remain
   unmeasured.
-- The external path uses the wired SN74HCT541N and approximately 330-ohm series
+- The external panel path uses the wired SN74HCT541N and approximately 330-ohm series
   resistor to panel DIN. Development uses a separate regulated 5 V panel supply
   and shared ground. Current, signal quality, and thermal behavior are unknown.
 
+### Build-specific on-panel informational overlay
+
+- Dad's WS2812 build composes a steady local day marker at `(day-1,7)` for
+  day 1..31, timing health at `(31,4)`, and holdover at `(31,3)`. The health
+  pixel follows GPS validity, PPS presence/lock, and fresh GGA satellite count
+  thresholds (>4 green, 4 amber, otherwise muted red). Calendar and health
+  composition are implemented after background/proof and glyph paint.
+- Calendar blue `(0,0,255)` is acceptable for now; approved health colors
+  `(0,255,32)`, `(255,128,0)`, and `(160,32,40)` are unchanged.
+- Both prior holdover passes were physically rejected. The latest 2..24
+  serializer-brightness pass had only 23 final RGB states/half-cycle, was
+  too bright and pink, stepped, and exhibited intermittent unrelated flicker.
+- Temporal error diffusion was physically rejected despite accepted pure-red
+  hue and promising DMA transport. It is removed. Current provisional holdover
+  uses fixed red `(255,0,0)`, a cosine 5 s cycle, and maps the envelope at/below
+  0.5 to OFF. Above cutoff, `red = 1 + round(7 * active^2)` for active
+  `(envelope - 0.5)/0.5`, yielding eight nonzero levels 1..8. Nominal half
+  cycle has a 2.5 s OFF dwell/cycle, 242/250 repeated adjacent samples, and a
+  maximum adjacent jump of 1 (OFF to 1). The code-1 plateau is ~0.20 s each
+  side. `lvl <0-32|off>` remains available. Smoothness/natural OFF dwell pending. No real holdover state
+  is implemented; production stays off and `h on` is proof-only.
+- The driver object is 1,868 B. It reuses the 768-byte logical framebuffer
+  and adds a 1,024-byte wire image required to feed DMA without CPU FIFO gaps.
+  Remaining state changes net against removed per-pixel serializer metadata.
+  Output preparation includes all transforms and final holdover RGB before
+  the stream is frozen. No brightness/transfer metadata is read during DMA.
+- At a hypothetical 100 frames/s, calculated data-stream duty is 76.8%
+  (7.68 ms of each 10 ms interval). Stable unchanged codes do not retransmit;
+  DMA output continues independently of USB/main-loop delays.
+  CPU cost, real refresh jitter, runtime stack/heap and power remain unmeasured.
+
 ### Planned separate WS2812 status chain
 
-- Approximately 3–4 discrete WS2812 LEDs are a separate logical/electrical
-  device. They are not appended to the 256-pixel panel chain. This preserves
-  fixed panel geometry and lets panel rendering/transmission and status updates
-  remain independently owned and serviceable.
+- Approximately 3–4 discrete WS2812 LEDs remain a general AAC-CE
+  logical/electrical option for other builds; they are not planned for Dad's
+  current clock. They form a separate device and are never appended to the
+  256-pixel panel chain, preserving independent ownership and serviceability.
 - The future status driver owns its LED count, meanings/colors, data GPIO, and
   update cadence. The main panel driver owns its 32x8 geometry, framebuffer,
   clock presentation, and applicable themes/animations. The drivers should not
@@ -427,7 +466,7 @@ No resource figures in this section are firmware build measurements.
 | 5 V supply capacity and margin | The 5 V / 2 A figure is a provisional planning target, not a verified requirement. Confirm panel, Pico, level-shifter, and transient loads before selecting limits. |
 | HCT541 logic levels and data integrity | Wired SN74HCT541N plus approximately 330-ohm series resistor; actual Pico-to-panel waveform and timing have not been measured. Panel uses separate regulated 5 V during development and shares ground. |
 | Matrix pixel mapping and physical orientation | Established by raw chase, panel silkscreen, four-corner proof, perimeter trace, row/column scans, and live `HH:MM` clock: raw zero is top-left; columns progress left-to-right with alternating vertical direction, first column top-to-bottom. |
-| Black pixel grid and diffuser | User reports installed/tested, producing distinct square pixels and substantially more useful apparent brightness than the bare panel. Brightness 1 is extremely dim and shifts amber red; 2 remains usable but very dim; 2..16 are useful development values. Exact production brightness and optical calibration remain open; enclosure, thermal impact, and light leakage still need evaluation. |
+| Current optical stack | User reports a light-gray printed grid plus diffuser. The earlier black-grid observations and amber reference appearance are historical measurements on a previous optical stack; their exact perceived appearance through the current stack is not reverified. Re-evaluate overlay colors physically; enclosure, thermal impact, and light leakage remain open. |
 | GPS PPS/RMC hardware timing | Physical GPS receiver setup and whole-second association timing require receiver-specific observation. Simulator qualification does not establish these properties. |
 | Development USB console on Pico 2 | Stage 2C.1 physical console verification is complete per current project status. Stage 2C.2 fault behavior remains physically unverified. |
 
@@ -472,3 +511,9 @@ No resource figures in this section are firmware build measurements.
 | 2026-10-12 | Approved variable-width 5x7 glyphs and fixed 12-hour physical face | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); static SRAM including vector table 11,584 B (Δ 0) | `pico2-dev`: 46,520 B flash / 11,632 B `.data + .bss` (Δ 0); static SRAM including vector table 11,904 B (Δ 0) | Build-derived from requested profiles. `pico2-dev-ws2812`: 49,336 B flash / 12,336 B `.data + .bss` / 12,608 B including vector table (Δ 0 from previous WS2812 build). No buffer, GPIO, PIO, DMA, interrupt, or SRAM allocation changed; the glyph table replacement and 12-hour formatter are within the same linked profile footprint. All requested host tests passed. Exact glyph appearance on the panel remains unverified. |
 | 2026-10-12 | Development WS2812 transfer characterization harness | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); `pico2-dev`: 46,520 B / 11,632 B (Δ 0) | `pico2-dev-ws2812`: 51,372 B flash (Δ +2,036); 12,352 B `.data + .bss` (Δ +16); static SRAM including vector table 12,624 B (Δ +16) | Build-derived. Added development-only curve selection and fixed-size color/ramp patterns; no framebuffer or peripheral allocation changed. The 16 B static SRAM increase is mode/pattern generation and refresh state. Production/default profiles remain unchanged. Physical curve comparison remains pending; neither candidate is approved for production. |
 | 2026-10-12 | Soft-white default, named palette, and in-place logical compositor | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` (Δ 0); `pico2-dev`: 46,520 B / 11,632 B (Δ 0) | `pico2-dev-ws2812`: 51,972 B flash (Δ +600); 12,360 B `.data + .bss` (Δ +8); static SRAM including vector table 12,632 B (Δ +8) | Build-derived. The compositor reuses the existing 768-byte framebuffer; no extra framebuffer, PIO, DMA, GPIO, or interrupt allocation. Added static proof-mode state and compositing/palette code. Default logical RGB is soft white at brightness 2; transfer remains off in production. Physical proof modes remain to be observed by the user. |
+| 2026-10-12 | Persistent calendar, timing-health, and holdover presentation overlay | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 53,824 B flash (Δ +1,852); 12,396 B `.data + .bss` (Δ +36); 12,668 B including vector table (Δ +36) | Build-derived. ELF `display` symbol is 844 B; the 768-byte framebuffer is reused, with no second frame buffer, GPIO, PIO, DMA, or interrupt added. Added small overlay state/animation and development proof controls. Local day marker and health rendering are implemented. Holdover stays off in production because the timing engine has no holdover state; `h on` is proof-only. Host suite passed. No physical overlay evaluation was performed; provisional colors need checking through the current light-gray printed grid and diffuser. |
+| 2026-10-12 | Corrected informational-overlay bench issues (physical recheck pending) | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 53,972 B flash (Δ +148); 12,404 B `.data + .bss` (Δ +8); 12,676 B including vector table (Δ +8) | Build-derived from requested profiles. WS2812 `display` symbol is 852 B (Δ +8); the 768-byte framebuffer remains, with no extra frame buffer, GPIO, PIO, DMA, or interrupt allocation. Added explicit per-frame output snapshot and per-pixel holdover output-brightness settings; production/dev non-WS profiles remain unchanged. Calendar blue and proof semantics are code changes. Holdover correction is unverified on the panel. |
+| 2026-10-12 | Final holdover correction candidate: fractional red and immutable DMA output | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 57,768 B flash (Δ +3,796); 13,424 B `.data + .bss` (Δ +1,020); 13,696 B including vector table (Δ +1,020) | Build-derived. Driver symbol 1,868 B (Δ +1,016); added 1,024-byte prepared GRB image, one DMA channel, fractional scalar state and cosine/output code. Per-pixel serializer metadata removed. GP8/PIO0 SM0/four instructions unchanged; no IRQ. Host stress passed 100,000 immutable frames / 200 cycles. Corrected rate is 800 kbit/s; dimness/smoothness, DMA waveform and sustained physical corruption recheck remain pending. |
+| 2026-10-12 | Stable direct low-level intensity characterization | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 58,244 B flash (Δ +476); 13,420 B `.data + .bss` (Δ −4); 13,692 B including vector table (Δ −4) | Build-derived against preceding DMA milestone. Driver symbol remains 1,868 B; removed temporal accumulator, added level proof and stateless local square mapping. No new buffers, DMA channels, PIO instructions, GPIO or IRQ. DMA/800 kbit/s/270 us drain/1 ms reset unchanged. Host suite including 100,000 immutable frames passed. Direct 1..16 red-code smoothness and acceptable physical peak remain pending. |
+| 2026-10-12 | Holdover direct breath range 0..10 for physical review | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 58,276 B flash (Δ +32) / 13,420 B `.data + .bss` / 13,692 B including vector table (RAM Δ 0) | Build-derived against preceding direct-intensity milestone. Added an envelope cutoff at 0.5 and active mapping 3 + round(7 × active²): eight nonzero levels, 242/250 repeated adjacent nominal 10 ms samples, max jump 3 at the OFF/3 boundary. Calculated OFF dwell ~2.5 s/cycle. No transport, buffer, GPIO, DMA, PIO, IRQ or clock appearance changes. Physical breathing smoothness remains pending. |
+| 2026-10-12 | Shift holdover active red range down to 1..8 | `pico2`: 44,888 B flash / 11,312 B `.data + .bss` / 11,584 B including vector table (Δ 0); `pico2-dev`: 46,520 B / 11,632 B / 11,904 B including vector table (Δ 0) | `pico2-dev-ws2812`: 58,260 B flash (Δ −16); 13,420 B `.data + .bss` / 13,692 B including vector table (RAM Δ 0) | Build-derived versus preceding cutoff build. Only active range constants changed; no transport, buffer, GPIO, DMA, PIO, IRQ or timing changes. Cutoff 0.5 and ~2.5 s OFF dwell retained; active range 1..8 has eight nonzero levels, 242/250 repeated samples and maximum adjacent jump 1. Physical review pending. |

@@ -274,6 +274,13 @@ void Console::execute(CommandHandler handler, void* context) {
             write("           pat {amber|r|g|b|w|c|m|off}\r\n");
             write("p          Show/select static clock proof: norm, amber, invert, bg\r\n");
             write("           p {norm|amber|invert|bg}\r\n");
+            write("s          Overlay health proof: good, min, bad, off, live\r\n");
+            write("           s {good|min|bad|off|live}\r\n");
+            write("h          Overlay holdover proof: on, off (live)\r\n");
+            write("           h {on|off}\r\n");
+            write("lvl        Isolated stable red code: lvl <0-32|off>\r\n");
+            write("day        Calendar marker proof: day 1-31, or live\r\n");
+            write("           day <1-31|live>\r\n");
             writeLine("ramp       Show low-code ramp: ramp {r|g|b|gray} (0-31)");
 #endif
             write("reset      Reset simulator to configured UTC seed\r\n");
@@ -357,6 +364,61 @@ void Console::execute(CommandHandler handler, void* context) {
                             static_cast<int64_t>(mode), *this);
                 else
                     writeLine("Usage: p {norm|amber|invert|bg}");
+            }
+        } else if (std::strcmp(begin, "s") == 0) {
+            if (*args && !*second) {
+                if (std::strcmp(args, "off") == 0) {
+                    if (handler) handler(context, Command::status_proof_set, 4, *this);
+                } else if (std::strcmp(args, "good") == 0) {
+                    if (handler) handler(context, Command::status_proof_set, 1, *this);
+                } else if (std::strcmp(args, "min") == 0) {
+                    if (handler) handler(context, Command::status_proof_set, 2, *this);
+                } else if (std::strcmp(args, "bad") == 0) {
+                    if (handler) handler(context, Command::status_proof_set, 3, *this);
+                } else if (std::strcmp(args, "live") == 0) {
+                    if (handler) handler(context, Command::status_proof_set, 0, *this);
+                }
+                else
+                    writeLine("Usage: s {good|min|bad|off|live}");
+            } else {
+                writeLine("Usage: s {good|min|bad|off|live}");
+            }
+        } else if (std::strcmp(begin, "h") == 0) {
+            if (*args && !*second &&
+                (std::strcmp(args, "on") == 0 || std::strcmp(args, "off") == 0)) {
+                if (handler) handler(context, Command::holdover_proof_set,
+                    std::strcmp(args, "on") == 0 ? 1 : 0, *this);
+            } else {
+                writeLine("Usage: h {on|off}");
+            }
+        } else if (std::strcmp(begin, "lvl") == 0) {
+            if (*args && !*second && std::strcmp(args, "off") == 0) {
+                if (handler) handler(context, Command::level_proof_set, -1, *this);
+            } else if (*args && !*second && exactDigits(args, std::strlen(args))) {
+                unsigned value = 0;
+                for (const char* p = args; *p; ++p) {
+                    value = value * 10u + static_cast<unsigned>(*p - '0');
+                    if (value > 32u) break;
+                }
+                if (value <= 32 && handler)
+                    handler(context, Command::level_proof_set, value, *this);
+                else writeLine("Usage: lvl <0-32|off>");
+            } else writeLine("Usage: lvl <0-32|off>");
+        } else if (std::strcmp(begin, "day") == 0) {
+            if (*args && !*second && std::strcmp(args, "live") == 0) {
+                if (handler) handler(context, Command::day_proof_set, 0, *this);
+            } else if (*args && !*second && exactDigits(args, std::strlen(args))) {
+                unsigned value = 0;
+                for (const char* p = args; *p; ++p) {
+                    value = value * 10u + static_cast<unsigned>(*p - '0');
+                    if (value > 31u) break;
+                }
+                if (value >= 1 && value <= 31 && handler)
+                    handler(context, Command::day_proof_set, value, *this);
+                else
+                    writeLine("Usage: day <1-31|live>");
+            } else {
+                writeLine("Usage: day <1-31|live>");
             }
 #endif
         } else if (std::strcmp(begin, "exit") == 0 && !*args) {

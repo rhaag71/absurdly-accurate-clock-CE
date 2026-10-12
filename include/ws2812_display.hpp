@@ -3,14 +3,17 @@
 #include <cstdint>
 #include "presentation_state.hpp"
 #include "ws2812_pixels.hpp"
+#include "ws2812_wire_frame.hpp"
 #include "ws2812_clock_color.hpp"
 #include "display_transfer.hpp"
+#include "informational_overlay.hpp"
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #include "ws2812_test_pattern.hpp"
 #endif
 
 namespace ws2812_display {
-// The selected driver owns GP8, PIO0 SM0, and its raw-order pixel buffer.
+// Selected driver owns GP8, PIO0 SM0, one DMA channel, and both its logical
+// pixel buffer and immutable prepared wire stream. No DMA interrupt is used.
 class Driver {
 public:
     Driver() = default;
@@ -19,13 +22,10 @@ public:
 
 private:
     Pixels pixels_;
-    uint32_t latch_deadline_us_ = 0;
-    uint16_t tx_cursor_ = 0;
+    WireFrame wire_frame_;
+    int dma_channel_ = -1;
     uint8_t pio_sm_ = 0;
     uint8_t program_offset_ = 0;
-    uint8_t tx_brightness_ = default_brightness;
-    display_appearance::TransferMode tx_transfer_ =
-        display_appearance::TransferMode::off;
     BrightnessRefreshTracker brightness_refresh_;
     ClockColorRefreshTracker color_refresh_;
     display_appearance::TransferRefreshTracker transfer_refresh_;
@@ -34,14 +34,18 @@ private:
     TestPatternRefreshTracker test_pattern_refresh_;
     bool last_frame_was_pattern_ = false;
 #endif
+    informational_overlay::BreathingAnimator holdover_breather_;
+    informational_overlay::Frame last_overlay_frame_;
+    uint32_t last_holdover_redraw_us_ = 0;
+    bool overlay_frame_initialized_ = false;
+    bool holdover_was_active_ = false;
     char last_text_[6] = {};
     bool initialized_ = false;
-    bool tx_active_ = false;
     bool frame_dirty_ = true;
-    bool latch_pending_ = false;
     bool has_rendered_text_ = false;
 
-    void updateFrame(const presentation::State& state, bool force_refresh);
-    void sendChunk(uint32_t now_us);
+    void updateFrame(const presentation::State& state, bool force_refresh,
+                     const informational_overlay::Frame& overlay);
+
 };
 }

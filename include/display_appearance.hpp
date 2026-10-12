@@ -34,6 +34,16 @@ constexpr Rgb blue = {0, 0, 255};
 constexpr Rgb cyan = {0, 255, 255};
 constexpr Rgb magenta = {255, 0, 255};
 
+// Dad's informational overlays: health is physically accepted; calendar blue
+// is acceptable for now; holdover red and its dim intensity need bench tuning.
+constexpr Rgb calendar_blue = {0, 0, 255};
+constexpr Rgb health_green = {0, 255, 32};
+constexpr Rgb health_amber = {255, 128, 0};
+constexpr Rgb health_red = {160, 32, 40};
+// Red-only avoids secondary-channel threshold/hue changes at fractional codes.
+// Calmness comes from the very low output intensity, subject to bench tuning.
+constexpr Rgb holdover_red = {255, 0, 0};
+
 enum class PaletteColor : uint8_t {
     soft_white, white, amber, red, green, blue, cyan, magenta
 };

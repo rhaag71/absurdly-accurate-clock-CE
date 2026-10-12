@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include <cstring>
 #include "hardware/gpio.h"
+#include "hardware/dma.h"
+#include "hardware/clocks.h"
+#include "hardware/sync.h"
 #include "hardware/pio.h"
 #include "clock_text_renderer.hpp"
 #include "display_compositor.hpp"
@@ -11,10 +14,9 @@
 
 namespace ws2812_display {
 namespace {
-// With the configured 150 MHz system clock and divider 15, PIO runs at
-// 10 MHz. Ten PIO cycles encode each 800 kHz WS2812 bit: T0H/T0L = 3/7
-// cycles and T1H/T1L = 6/4 cycles. The post-frame low interval is handled
-// nonblockingly by Driver::service().
+// Ten PIO cycles per bit at 8 MHz give the intended 800 kbit/s stream.
+// DREQ-paced DMA prevents main-loop/USB delays from starving the TX FIFO.
+// FIFO/OSR drain and reset-low settling are polled, never waited on here.
 uint16_t pio_instructions[] = {
     static_cast<uint16_t>(pio_encode_out(pio_x, 1) | pio_encode_sideset(1, 0) |
                           pio_encode_delay(3)),
@@ -27,9 +29,6 @@ uint16_t pio_instructions[] = {
 };
 const pio_program ws2812_program = {pio_instructions, 4, 0, 0, 1};
 
-bool deadlineReached(uint32_t now, uint32_t deadline) {
-    return static_cast<int32_t>(now - deadline) >= 0;
-}
 }
 
 void Driver::begin(const presentation::State&) {
@@ -47,6 +46,13 @@ void Driver::begin(const presentation::State&) {
 
     pio_sm_ = 0;
     pio_sm_claim(pio0, pio_sm_);
+    dma_channel_ = dma_claim_unused_channel(false);
+    if (dma_channel_ < 0) {
+        // Optional display failure leaves timekeeping and watchdog independent.
+        pio_sm_unclaim(pio0, pio_sm_);
+        pio_remove_program(pio0, &ws2812_program, program_offset_);
+        return;
+    }
     pio_gpio_init(pio0, pins::ws2812_data);
 
     pio_sm_config config = pio_get_default_sm_config();
@@ -56,7 +62,8 @@ void Driver::begin(const presentation::State&) {
     sm_config_set_out_pins(&config, pins::ws2812_data, 1);
     sm_config_set_out_shift(&config, false, true, 24);
     sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_TX);
-    sm_config_set_clkdiv(&config, 15.0f);
+    sm_config_set_clkdiv(&config, static_cast<float>(clock_get_hz(clk_sys)) /
+        (wire_bit_rate * wire_cycles_per_bit));
     pio_sm_init(pio0, pio_sm_, program_offset_, &config);
     pio_sm_set_pins_with_mask(pio0, pio_sm_, 0, 1u << pins::ws2812_data);
     pio_sm_set_consecutive_pindirs(pio0, pio_sm_, pins::ws2812_data, 1, true);
@@ -73,10 +80,14 @@ void Driver::begin(const presentation::State&) {
     test_pattern_refresh_.reset();
     last_frame_was_pattern_ = false;
 #endif
+    overlay_frame_initialized_ = false;
+    holdover_was_active_ = false;
+    last_holdover_redraw_us_ = 0;
     initialized_ = true;
 }
 
-void Driver::updateFrame(const presentation::State& state, bool force_refresh) {
+void Driver::updateFrame(const presentation::State& state, bool force_refresh,
+                         const informational_overlay::Frame& overlay) {
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     const TestPattern pattern = testPattern();
     if (pattern != TestPattern::clock) {
@@ -93,7 +104,7 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh) {
     if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0 &&
         !force_refresh)
         return;
-    if (!valid && !has_rendered_text_) {
+    if (!valid && !has_rendered_text_ && !force_refresh) {
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
         if (last_frame_was_pattern_) {
             pixels_.clear();
@@ -104,65 +115,51 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh) {
         return;
     }
 
+    const display_appearance::Rgb color =
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        proofClockColor(proofMode(), clockColor());
+#else
+        clockColor();
+#endif
+    const display_appearance::Rgb background =
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        proofBackground(proofMode());
+#else
+        {0, 0, 0};
+#endif
     if (valid) {
-        const display_appearance::Rgb color =
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-            proofClockColor(proofMode(), clockColor());
-#else
-            clockColor();
-#endif
-        const display_appearance::Rgb background =
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-            proofBackground(proofMode());
-#else
-            {0, 0, 0};
-#endif
         display_compositor::composeClock(
             pixels_, text, logical_width, 0, background,
             display_compositor::solid(color));
+    } else {
+        display_compositor::beginFrame(pixels_, background);
+    }
+    // Persistent state/date pixels are painted after every proof background
+    // and clock mask so inversion and future decoration cannot cover them.
+    informational_overlay::apply(pixels_, overlay);
+    if (valid) {
         std::memcpy(last_text_, text, sizeof(last_text_));
         has_rendered_text_ = true;
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-        last_frame_was_pattern_ = false;
-#endif
     } else {
-        // A newly invalid authoritative snapshot clears the old time once.
-        pixels_.clear();
         last_text_[0] = 0;
         has_rendered_text_ = false;
+    }
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-        last_frame_was_pattern_ = false;
+    last_frame_was_pattern_ = false;
 #endif
-    }
     frame_dirty_ = true;
-}
-
-void Driver::sendChunk(uint32_t now_us) {
-    unsigned sent = 0;
-    while (sent < 8 && tx_cursor_ < pixel_count &&
-           !pio_sm_is_tx_fifo_full(pio0, pio_sm_)) {
-        pio_sm_put(pio0, pio_sm_, pixels_.grbWord(
-            tx_cursor_++, tx_brightness_, tx_transfer_));
-        ++sent;
-    }
-    if (tx_cursor_ == pixel_count) {
-        tx_active_ = false;
-        latch_pending_ = true;
-        latch_deadline_us_ = now_us + 1000;
-    }
 }
 
 void Driver::service(const presentation::State& state) {
     if (!initialized_) return;
 
-    const uint32_t now_us = micros();
-    if (tx_active_) {
-        sendChunk(now_us);
-        return;
-    }
-    if (latch_pending_) {
-        if (!deadlineReached(now_us, latch_deadline_us_)) return;
-        latch_pending_ = false;
+    // Neither compositor nor frame preparation can run until the DMA stream,
+    // last FIFO/OSR word, and reset-low interval have all completed.
+    if (wire_frame_.busy()) {
+        const bool dma_busy = dma_channel_is_busy(dma_channel_);
+        // Timestamp after observing DMA completion, so a preempting interrupt
+        // cannot shorten the conservative FIFO-drain/reset interval.
+        if (!wire_frame_.poll(micros(), dma_busy)) return;
     }
 
     const bool brightness_changed = brightness_refresh_.consumeChange();
@@ -174,24 +171,79 @@ void Driver::service(const presentation::State& state) {
     const bool pattern_changed = test_pattern_refresh_.consumeChange();
     force_refresh = force_refresh || pattern_changed || proof_mode_changed;
 #endif
+
+    const uint32_t overlay_now_us = state.now_us;
+    const informational_overlay::ProofOverrides proof =
+        informational_overlay::proofOverrides();
+    const bool holdover_active = informational_overlay::holdoverActive(false, proof);
+    uint8_t holdover_level = informational_overlay::holdover_min_intensity;
+    if (holdover_active) {
+        if (!holdover_was_active_ ||
+            static_cast<uint32_t>(overlay_now_us - last_holdover_redraw_us_) >=
+                informational_overlay::holdover_redraw_interval_us) {
+            if (!holdover_was_active_) {
+                holdover_breather_.reset(overlay_now_us);
+                last_holdover_redraw_us_ = overlay_now_us;
+            } else {
+                // Preserve the sampling grid; skip overdue samples rather
+                // than drifting the cadence or replaying stale animation.
+                const uint32_t elapsed = overlay_now_us - last_holdover_redraw_us_;
+                last_holdover_redraw_us_ += elapsed /
+                    informational_overlay::holdover_redraw_interval_us *
+                    informational_overlay::holdover_redraw_interval_us;
+            }
+            holdover_level = holdover_breather_.update(overlay_now_us);
+        } else if (overlay_frame_initialized_) {
+            holdover_level = last_overlay_frame_.holdover_intensity;
+        }
+        holdover_was_active_ = true;
+    } else {
+        holdover_breather_.reset(overlay_now_us);
+        holdover_was_active_ = false;
+    }
+    const informational_overlay::Frame overlay =
+        informational_overlay::makeFrame(state, false, holdover_level, proof);
+    if (!overlay_frame_initialized_ ||
+        !informational_overlay::sameFrame(overlay, last_overlay_frame_)) {
+        force_refresh = true;
+        frame_dirty_ = true;
+        last_overlay_frame_ = overlay;
+        overlay_frame_initialized_ = true;
+    }
     if (force_refresh) frame_dirty_ = true;
 
-    updateFrame(state, force_refresh);
+    updateFrame(state, force_refresh, overlay);
+    informational_overlay::isolateLevelProof(pixels_, overlay);
 
     if (frame_dirty_) {
-        tx_cursor_ = 0;
-        tx_brightness_ = brightness();
-        // Keep every pixel in one transmitted frame on the same transfer
-        // mode, even if a development command arrives during chunked output.
-        tx_transfer_ = display_appearance::transferMode();
+        uint8_t output_brightness = brightness();
+        const auto transfer = display_appearance::transferMode();
+        bool clock_frame = true;
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-        tx_brightness_ = testPatternBrightness(testPattern(), brightness());
-        if (testPattern() == TestPattern::clock)
-            tx_brightness_ = proofBrightness(proofMode(), brightness());
+        clock_frame = testPattern() == TestPattern::clock;
+        output_brightness = testPatternBrightness(testPattern(), brightness());
+        if (clock_frame)
+            output_brightness = proofBrightness(proofMode(), brightness());
 #endif
-        tx_active_ = true;
+        // Freeze final output words before DMA starts. Stable local red is
+        // already in device-code units, so it is not crushed by brightness 2
+        // or brightened by development comparison curves. Other pixels retain
+        // their existing brightness/transfer path exactly.
+        if (!wire_frame_.prepare(pixels_, output_brightness, transfer)) return;
+        if (overlay.level_proof >= 0 || (clock_frame && overlay.holdover))
+            wire_frame_.paintOutputPixel(31, 3,
+                informational_overlay::outputRed(overlay));
+        if (!wire_frame_.start()) return;
+        dma_channel_config dma_config = dma_channel_get_default_config(dma_channel_);
+        channel_config_set_transfer_data_size(&dma_config, DMA_SIZE_32);
+        channel_config_set_read_increment(&dma_config, true);
+        channel_config_set_write_increment(&dma_config, false);
+        channel_config_set_dreq(&dma_config, pio_get_dreq(pio0, pio_sm_, true));
+        channel_config_set_high_priority(&dma_config, true);
+        __dmb(); // Publish all prepared SRAM words before enabling the DMA reader.
+        dma_channel_configure(dma_channel_, &dma_config, &pio0->txf[pio_sm_],
+                              wire_frame_.words(), pixel_count, true);
         frame_dirty_ = false;
-        sendChunk(now_us);
     }
 }
 }
