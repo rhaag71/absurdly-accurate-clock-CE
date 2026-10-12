@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAC Glyph Editor</title>
+<style>
+:root {
+  --bg: #15161a; --panel: #1d1f24; --line: #2c2f36; --text: #e6e6e6; --muted: #8b8f98;
+  --accent: #ffb030; --off: #26282d; --on: #ffb030;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 18px; margin: 0 0 12px; }
+h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, select, input { background: #2a2d34; color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 5px 9px; font: inherit; }
+button:hover { border-color: var(--accent); }
+input[type=text] { width: 7em; font-family: ui-monospace, monospace; }
+input[type=number] { width: 4em; }
+label { color: var(--muted); }
+.panel-wrap { overflow-x: auto; }
+.panel { display: grid; grid-template-columns: repeat(32, 1fr); gap: 3px; background: #0a0a0c; padding: 8px; border-radius: 6px; min-width: 520px; margin-bottom: 8px; }
+.panel div { aspect-ratio: 1; border-radius: 50%; background: var(--off); }
+.panel div.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
+.panel div.guide { outline: 1px dashed #444; }
+.meta { font-family: ui-monospace, monospace; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.glyphs { display: flex; flex-wrap: wrap; gap: 12px; }
+.glyph { border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.glyph.sel { border-color: var(--accent); }
+.glyph header { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; font-family: ui-monospace, monospace; }
+.glyph header button { padding: 0 6px; }
+.grid { display: grid; gap: 2px; }
+.grid div { width: 20px; height: 20px; background: var(--off); border-radius: 3px; cursor: pointer; }
+.grid div.on { background: var(--on); }
+textarea { width: 100%; min-height: 220px; background: #0f1013; color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: 12px ui-monospace, monospace; padding: 8px; }
+.note { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<h1>AAC clock glyph editor — 32×8 WS2812</h1>
+
+<section>
+  <h2>Panel preview</h2>
+  <div class="row" style="margin-bottom:8px">
+    <label>Font <select id="preset"></select></label>
+    <label>Height <input id="height" type="number" min="3" max="8"></label>
+    <label>Top y <input id="ytop" type="number" min="0" max="7"></label>
+    <label>Spacing <input id="spacing" type="number" min="0" max="3"></label>
+    <label>Colour <input id="color" type="color" value="#ffb030"></label>
+    <label><input id="guides" type="checkbox"> row guides</label>
+  </div>
+  <div class="row" style="margin-bottom:8px">
+    <label>Samples</label>
+    <input id="samples" type="text" style="width:26em" value="12:34 10:07 1:11 88:88 23:59 4:56 9:00">
+  </div>
+  <div id="panels" class="panel-wrap"></div>
+</section>
+
+<section>
+  <h2>Glyphs (click pixels to toggle)</h2>
+  <div id="glyphs" class="glyphs"></div>
+</section>
+
+<section>
+  <h2>C++ table for <code>include/compact_clock_font.hpp</code></h2>
+  <div class="row" style="margin-bottom:8px">
+    <button id="copy">Copy</button>
+    <button id="import">Import from text box</button>
+    <button id="reset">Reset preset</button>
+    <span class="note">Edits auto-save in this browser. Paste a glyph table and Import to load one.</span>
+  </div>
+  <textarea id="out" spellcheck="false"></textarea>
+</section>
+</main>
+
+<script>
+const CHARS = ['0','1','2','3','4','5','6','7','8','9',':'];
+
+// Glyph art: '#' on, '.' off. Width comes from the row length.
+const AAC_CE_5X7 = {
+  '0': ['.###.','#...#','#...#','#...#','#...#','#...#','.###.'],
+  '1': ['.#.','##.','.#.','.#.','.#.','.#.','###'],
+  '2': ['.###.','#...#','....#','..##.','.#...','#....','#####'],
+  '3': ['.###.','....#','....#','..##.','....#','....#','.###.'],
+  '4': ['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.'],
+  '5': ['#####','#....','#....','####.','....#','#...#','.###.'],
+  '6': ['.###.','#...#','#....','####.','#...#','#...#','.###.'],
+  '7': ['####.','....#','...#.','..#..','.#...','.#...','.#...'],
+  '8': ['.###.','#...#','#...#','.###.','#...#','#...#','.###.'],
+  '9': ['.###.','#...#','#...#','.####','....#','#...#','.###.'],
+  ':': ['.','.','#','.','#','.','.'],
+};
+const PRESETS = {
+  'AAC-CE 5x7 (5 fixed)': { height: 7, ytop: 0, spacing: 1, art: AAC_CE_5X7 },
+  'AAC-CE 5x7 (original 5)': { height: 7, ytop: 0, spacing: 1, art: { ...AAC_CE_5X7,
+    '5': ['#####','#....','####.','....#','....#','#...#','.###.'] } },
+  'Repo: compact 4x6 (current)': { height: 6, ytop: 1, spacing: 1, art: {
+    '0': ['.##.','#..#','#..#','#..#','#..#','.##.'],
+    '1': ['#.','##','#.','#.','#.','##'],
+    '2': ['.##.','#..#','...#','..#.','.#..','####'],
+    '3': ['.##.','...#','...#','.##.','...#','.##.'],
+    '4': ['#..#','#..#','#..#','####','...#','...#'],
+    '5': ['####','#...','#...','###.','...#','###.'],
+    '6': ['.##.','#...','#...','###.','#..#','.##.'],
+    '7': ['####','...#','..#.','.#..','.#..','.#..'],
+    '8': ['.##.','#..#','.##.','#..#','#..#','.##.'],
+    '9': ['.##.','#..#','#..#','.###','...#','.##.'],
+    ':': ['.','#','.','.','#','.'],
+  }},
+  'Revised 4x6': { height: 6, ytop: 1, spacing: 1, art: {
+    '0': ['.##.','#..#','#..#','#..#','#..#','.##.'],
+    '1': ['.#.','##.','.#.','.#.','.#.','###'],
+    '2': ['.##.','#..#','...#','..#.','.#..','####'],
+    '3': ['###.','...#','.##.','...#','...#','###.'],
+    '4': ['#..#','#..#','#..#','####','...#','...#'],
+    '5': ['####','#...','###.','...#','...#','###.'],
+    '6': ['.##.','#...','###.','#..#','#..#','.##.'],
+    '7': ['####','...#','...#','..#.','.#..','.#..'],
+    '8': ['.##.','#..#','.##.','#..#','#..#','.##.'],
+    '9': ['.##.','#..#','#..#','.###','...#','.##.'],
+    ':': ['.','#','.','.','#','.'],
+  }},
+  'Square 4x7': { height: 7, ytop: 0, spacing: 1, art: {
+    '0': ['####','#..#','#..#','#..#','#..#','#..#','####'],
+    '1': ['.#.','##.','.#.','.#.','.#.','.#.','###'],
+    '2': ['####','...#','...#','####','#...','#...','####'],
+    '3': ['####','...#','...#','.###','...#','...#','####'],
+    '4': ['#..#','#..#','#..#','####','...#','...#','...#'],
+    '5': ['####','#...','#...','####','...#','...#','####'],
+    '6': ['####','#...','#...','####','#..#','#..#','####'],
+    '7': ['####','...#','...#','..#.','.#..','.#..','.#..'],
+    '8': ['####','#..#','#..#','####','#..#','#..#','####'],
+    '9': ['####','#..#','#..#','####','...#','...#','####'],
+    ':': ['.','.','#','.','#','.','.'],
+  }},
+  'Tiny 3x5': { height: 5, ytop: 1, spacing: 1, art: {
+    '0': ['###','#.#','#.#','#.#','###'],
+    '1': ['.#','##','.#','.#','.#'],
+    '2': ['###','..#','###','#..','###'],
+    '3': ['###','..#','###','..#','###'],
+    '4': ['#.#','#.#','###','..#','..#'],
+    '5': ['###','#..','###','..#','###'],
+    '6': ['###','#..','###','#.#','###'],
+    '7': ['###','..#','..#','.#.','.#.'],
+    '8': ['###','#.#','###','#.#','###'],
+    '9': ['###','#.#','###','..#','###'],
+    ':': ['.','#','.','#','.'],
+  }},
+};
+
+const $ = id => document.getElementById(id);
+let presetName, font; // font: {height, ytop, spacing, glyphs: {ch: [[0/1...]...]}}
+
+function fromArt(p) {
+  const glyphs = {};
+  for (const ch of CHARS) glyphs[ch] = p.art[ch].map(r => [...r].map(c => c === '#' ? 1 : 0));
+  return { height: p.height, ytop: p.ytop, spacing: p.spacing, glyphs };
+}
+function save() { try { localStorage.setItem('aac-glyphs:' + presetName, JSON.stringify(font)); localStorage.setItem('aac-glyphs:last', presetName); } catch (e) {} }
+function load(name) {
+  presetName = name;
+  let f = null;
+  try { f = JSON.parse(localStorage.getItem('aac-glyphs:' + name)); } catch (e) {}
+  font = f || fromArt(PRESETS[name]);
+  syncControls(); renderAll();
+}
+function syncControls() {
+  $('preset').value = presetName; $('height').value = font.height;
+  $('ytop').value = font.ytop; $('spacing').value = font.spacing;
+}
+const width = ch => font.glyphs[ch][0].length;
+
+function setHeight(h) {
+  h = Math.max(3, Math.min(8, h));
+  for (const ch of CHARS) {
+    const g = font.glyphs[ch], w = g[0].length;
+    while (g.length < h) g.push(Array(w).fill(0));
+    g.length = h;
+  }
+  font.height = h;
+  font.ytop = Math.min(font.ytop, 8 - h);
+}
+function setWidth(ch, w) {
+  w = Math.max(1, Math.min(6, w));
+  for (const r of font.glyphs[ch]) { while (r.length < w) r.push(0); r.length = w; }
+}
+
+function textWidth(t) {
+  let w = 0; const s = [...t].filter(c => font.glyphs[c]);
+  s.forEach((c, i) => { w += width(c) + (i < s.length - 1 ? font.spacing : 0); });
+  return w;
+}
+function renderPanel(text) {
+  const px = Array.from({ length: 8 }, () => Array(32).fill(0));
+  const w = textWidth(text);
+  let x = Math.floor((32 - w) / 2);
+  const s = [...text].filter(c => font.glyphs[c]);
+  s.forEach((c, i) => {
+    font.glyphs[c].forEach((row, r) => row.forEach((v, col) => {
+      const yy = font.ytop + r, xx = x + col;
+      if (v && yy >= 0 && yy < 8 && xx >= 0 && xx < 32) px[yy][xx] = 1;
+    }));
+    x += width(c) + (i < s.length - 1 ? font.spacing : 0);
+  });
+  const wrap = document.createElement('div');
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const left = Math.floor((32 - w) / 2);
+  meta.textContent = `"${text}"  width ${w}  margins ${left}/${32 - w - left}` + (w > 32 ? '  OVERFLOW' : '');
+  const p = document.createElement('div'); p.className = 'panel';
+  const guides = $('guides').checked;
+  for (let y = 0; y < 8; y++) for (let xx = 0; xx < 32; xx++) {
+    const d = document.createElement('div');
+    if (px[y][xx]) d.className = 'on';
+    else if (guides && (y < font.ytop || y >= font.ytop + font.height)) d.className = 'guide';
+    p.appendChild(d);
+  }
+  wrap.append(p, meta);
+  return wrap;
+}
+function renderPanels() {
+  const host = $('panels'); host.innerHTML = '';
+  for (const t of $('samples').value.split(/\s+/).filter(Boolean)) host.appendChild(renderPanel(t));
+}
+
+function renderGlyphs() {
+  const host = $('glyphs'); host.innerHTML = '';
+  for (const ch of CHARS) {
+    const g = font.glyphs[ch], w = g[0].length;
+    const box = document.createElement('div'); box.className = 'glyph';
+    const hd = document.createElement('header');
+    const minus = document.createElement('button'); minus.textContent = '−'; minus.title = 'narrower';
+    const plus = document.createElement('button'); plus.textContent = '+'; plus.title = 'wider';
+    const lbl = document.createElement('span'); lbl.textContent = `'${ch}' w${w}`;
+    minus.onclick = () => { setWidth(ch, w - 1); changed(); };
+    plus.onclick = () => { setWidth(ch, w + 1); changed(); };
+    hd.append(lbl, minus, plus);
+    const grid = document.createElement('div'); grid.className = 'grid';
+    grid.style.gridTemplateColumns = `repeat(${w}, 20px)`;
+    g.forEach((row, r) => row.forEach((v, c) => {
+      const d = document.createElement('div'); if (v) d.className = 'on';
+      d.onclick = () => { row[c] ^= 1; changed(); };
+      grid.appendChild(d);
+    }));
+    box.append(hd, grid); host.appendChild(box);
+  }
+}
+
+function toCpp() {
+  const hex = n => '0x' + n.toString(16).padStart(2, '0');
+  const lines = CHARS.map(ch => {
+    const g = font.glyphs[ch], w = g[0].length;
+    const rows = g.map(r => hex(r.reduce((a, v) => (a << 1) | v, 0)));
+    const art = g.map(r => r.map(v => v ? '#' : '.').join('')).join(' ');
+    return `        {${w}, {${rows.join(', ')}}}, // ${ch}  ${art}`;
+  });
+  return `// glyph_height = ${font.height}; draw at y = ${font.ytop}; spacing = ${font.spacing}\n` +
+         `constexpr int glyph_height = ${font.height};\n` +
+         `constexpr int maximum_digit_width = ${Math.max(...CHARS.slice(0, 10).map(width))};\n` +
+         `constexpr int colon_width = ${width(':')};\n` +
+         `constexpr int default_spacing = ${font.spacing};\n\n` +
+         `    static const Glyph glyphs[] = {\n${lines.join('\n')}\n    };\n`;
+}
+function importCpp(text) {
+  const entries = [...text.matchAll(/\{\s*(\d+)\s*,\s*\{([^}]*)\}\s*\}/g)];
+  if (entries.length < CHARS.length) { alert(`Found ${entries.length} glyph entries; need ${CHARS.length} (0-9 then :).`); return; }
+  const glyphs = {}; let h = 0;
+  CHARS.forEach((ch, i) => {
+    const w = +entries[i][1];
+    const rows = entries[i][2].split(',').map(s => s.trim()).filter(Boolean).map(Number);
+    h = Math.max(h, rows.length);
+    glyphs[ch] = rows.map(n => Array.from({ length: w }, (_, c) => (n >> (w - 1 - c)) & 1));
+  });
+  font.glyphs = glyphs; font.height = 0; setHeight(h);
+  const yt = text.match(/draw at y = (\d)/); if (yt) font.ytop = +yt[1];
+  const sp = text.match(/default_spacing = (\d)/); if (sp) font.spacing = +sp[1];
+  font.ytop = Math.min(font.ytop, 8 - font.height);
+  changed(); syncControls();
+}
+
+function renderAll() {
+  document.documentElement.style.setProperty('--on', $('color').value);
+  renderPanels(); renderGlyphs(); $('out').value = toCpp();
+}
+function changed() { save(); renderAll(); }
+
+for (const n of Object.keys(PRESETS)) { const o = document.createElement('option'); o.textContent = n; $('preset').appendChild(o); }
+$('preset').onchange = e => load(e.target.value);
+$('height').onchange = e => { setHeight(+e.target.value); syncControls(); changed(); };
+$('ytop').onchange = e => { font.ytop = Math.max(0, Math.min(8 - font.height, +e.target.value)); syncControls(); changed(); };
+$('spacing').onchange = e => { font.spacing = Math.max(0, +e.target.value); changed(); };
+$('color').oninput = renderAll;
+$('guides').onchange = renderPanels;
+$('samples').oninput = renderPanels;
+$('copy').onclick = () => navigator.clipboard.writeText($('out').value);
+$('import').onclick = () => importCpp($('out').value);
+$('reset').onclick = () => { try { localStorage.removeItem('aac-glyphs:' + presetName); } catch (e) {} load(presetName); };
+
+let last = null; try { last = localStorage.getItem('aac-glyphs:last'); } catch (e) {}
+load(PRESETS[last] ? last : 'AAC-CE 5x7 (5 fixed)');
+</script>
+</body>
+</html>

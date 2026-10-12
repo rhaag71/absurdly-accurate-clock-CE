@@ -123,13 +123,9 @@ The active abbreviation should be available to the presentation layer.
 
 ## 5. 12 / 24 Hour Display
 
-CE shall support:
-
-- 12-hour civil time
-- 24-hour civil time
-
-The production mode is a compile-time personalization choice; its selected
-default remains to be specified.
+The physical consumer clock face is 12-hour only. Internal UTC, diagnostics,
+and serial representations may use 24-hour time, but no compile-time preference
+may cause the physical clock face to display it.
 
 Changing display format must not change canonical UTC.
 
@@ -147,14 +143,41 @@ or center from nominal glyph dimensions. Formatting precedes measurement, so
 different hour formats and variable-width digits may produce different widths
 and centered origins.
 
-In 12-hour mode, show the hour without a leading zero: `1:23`, `8:05`, `11:59`,
-and `12:00`. Do not show `01:23` or `08:05` in that mode. In 24-hour mode,
-retain two-digit hours: `01:23`, `08:05`, `11:59`, and `23:59`. This is a
-presentation rule only; canonical UTC and time qualification are unaffected.
+The physical clock shows the hour without a leading zero: `1:05`, `8:05`,
+`9:59`, `10:00`, `11:59`, and `12:00`. Midnight and noon both use `12`; never
+display `0` or `00` for those hours. Canonical UTC and time qualification are
+unaffected.
 
-The selected WS2812 profile is configured for 24-hour output. The clock
-renderer supports unpadded 12-hour presentation before measuring and centering
-the resulting string.
+### Approved physical clock glyphs
+
+The WS2812 clock uses this exact clock-specific mask table. Rows are seven
+pixels high, digit width is at most five pixels, digit `1` is three pixels
+wide, and the colon is one pixel wide. The default gap between adjacent glyphs
+is one pixel; no gap follows the last glyph. Each row byte is the exact
+approved bitmap data, with bits interpreted left to right over the declared
+glyph width. Zero is plain and unslashed. These masks define geometry only and
+remain independent of color, effects, and scenes.
+
+```text
+height=7, maximum_digit_width=5, colon_width=1, default_spacing=1
+0 {5, 0e 11 11 11 11 11 0e}
+1 {3, 02 06 02 02 02 02 07}
+2 {5, 0e 11 01 06 08 10 1f}
+3 {5, 0e 11 01 06 01 11 0e}
+4 {5, 02 06 0a 12 1f 02 02}
+5 {5, 1f 10 10 1e 01 11 0e}
+6 {5, 0e 11 10 1e 11 11 0e}
+7 {5, 1e 01 02 04 08 08 08}
+8 {5, 0e 11 11 0e 11 11 0e}
+9 {5, 0e 11 11 0f 01 11 0e}
+: {1, 00 00 01 00 01 00 00}
+```
+
+Format the final 12-hour string first. Measure its actual pixel width by
+summing each glyph's declared width and the one-pixel gaps between glyphs,
+then center with `x = (32 - rendered_width) / 2` using integer placement.
+Variable-width advances must honor the declared width, including the compact
+three-pixel `1`.
 
 ---
 
@@ -162,8 +185,9 @@ the resulting string.
 
 Production personalization direction:
 
-- timezone and 12/24-hour format are build-time choices, not persistent user
-  settings in the selected design.
+- timezone is a build-time choice, not a persistent user setting. The physical
+  clock face is always 12-hour, with no leading zero and `12` at midnight and
+  noon.
 
 The development profile supports deterministic simulated GPS/PPS for bench
 development without attached GPS hardware. Simulated input must use the same
@@ -300,21 +324,21 @@ Raw 0..255 chase, RGB transport, four-corner proof, logical perimeter trace,
 row/column scans, temporary 5x7 glyph rendering, and the full-height 6x8 font
 were physically evaluated. The 6x8 candidate was judged too large for the
 product direction. The first compact variable-width candidate preserved
-useful spacing but was physically judged visually unattractive. The active
-development font is the conventional 4x6 compact clock face, implemented for
-physical evaluation; final physical approval remains open. Keep glyphs simple,
-chunky, and immediately readable. Effects decorate around the glyph mask
-rather than stylizing or replacing numerals. The renderer draws glyphs at
-y=1..6 and leaves row 7 unused. The widest sample, 88:88, measures 21 columns
-and leaves 5 columns on the left and 6 on the right after centering.
+useful spacing but was physically judged visually unattractive. The approved
+development font is the variable-width 5x7 clock glyph set specified in
+Section 5; exact physical verification remains open. Effects decorate around
+the glyph mask rather than stylizing or replacing numerals. The renderer draws the
+seven glyph rows at y=0..6 and leaves row 7 unused. The widest time sample is
+23 columns with the approved glyphs (`10:00` and `12:34`).
 The normal development WS2812 runtime displays `HH:MM` from the shared
 presentation state through the existing civil-time path. The user has
-physically verified the clock, minute rollover, console, transport, and
-rendering. Software global brightness is 0..255 with default 8 and is applied
+physically verified earlier clock mode, minute rollover, console, transport,
+and rendering. The exact approved glyph set remains to be observed on hardware.
+Software global brightness is 0..255 with default 8 and is applied
 to serialized pixel data; it does not vary the 5 V supply and is not a current
 limiter. The compact font centers each formatted string by its actual rendered
-width; see Section 5 for the layout and hour-format contract. Twelve-hour
-output omits the leading zero. Appearance
+width; see Section 5 for the glyph, layout, and 12-hour contract. The clock
+face omits the leading zero. Appearance
 tuning through the optical stack remains pending.
 
 Display hardware is build-specific and replaceable.
@@ -339,13 +363,13 @@ mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
 topology. Raw chase, RGB transport, corners, perimeter, rows, columns, the
 temporary 5x7 font, and the full-height 6x8 candidate were physically
-evaluated. The 6x8 candidate was judged too large; the first compact candidate
-was visually unattractive. The new conventional 4x6 compact font awaits
-physical evaluation. The former fills,
+evaluated. The 6x8 candidate was judged too large. The approved clock-specific
+variable-width 5x7 glyph table is implemented, pending physical verification.
+The former fills,
 geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
 runtime. Development now uses the existing simulated GPS/PPS source, normal
 timebase qualification, and presentation state to display civil `HH:MM` in
-logical amber `(255, 96, 0)` by default. The current hour format is 24-hour.
+logical amber `(255, 96, 0)` by default. The physical face is always 12-hour.
 The user has physically verified clock mode and minute rollover; no effects
 framework is implemented. Software global brightness is implemented for WS2812 output; its
 appearance tuning remains future bench work. The installed black PETG-style
@@ -365,15 +389,14 @@ output conversion, after desired intensity and global brightness have been
 reduced. This differs from a separate electrical current-budget limiter; its
 ordering relative to transfer correction remains undecided. Neither local
 intensity nor global brightness changes the panel's 5 V supply. Effects,
-transfer correction, current budgeting, and final font selection remain future
-work; the actual-width centering rule is specified in Section 5. The primary
-clock font prioritizes compact, conventional, glance-readable numerals over
-styling. Effects decorate around the glyph mask rather than distorting or
-replacing the numerals. Primary glyphs render at y=1..6; row 7 remains unused
-for future date/status overlays.
+transfer correction, and current budgeting remain future work; the actual-width
+centering rule and exact approved glyph geometry are specified in Section 5.
+Effects decorate around the glyph mask rather than distorting or replacing the
+numerals. Primary glyphs render at y=0..6; row 7 remains unused for future
+date/status overlays.
 
 The intended future presentation order is authoritative/civil presentation
-time → selected 12/24-hour formatting → active-font width measurement →
+time → physical 12-hour formatting → active-font width measurement →
 centered target layout → optional transition/recenter presentation behavior →
 overlays/effects → logical framebuffer → brightness/output processing →
 display transport. Effects and special-day behavior are presentation policy;

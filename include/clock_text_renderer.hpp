@@ -1,26 +1,24 @@
 #pragma once
 
-#include "ce_config.hpp"
 #include "compact_clock_font.hpp"
 #include "presentation_state.hpp"
 
-// Civil conversion stays in presentation; this renderer only formats the
-// authoritative snapshot for the primary compact logical clock font.
+// Civil conversion stays in presentation; this renderer formats the
+// authoritative snapshot for the primary 5x7 clock glyph masks.
 namespace clock_text_renderer {
-inline bool formatHHMM(const presentation::State& state, char (&text)[6],
-                       ce_config::HourFormat hour_format = ce_config::hour_format) {
+inline bool formatHHMM(const presentation::State& state, char (&text)[6]) {
     if (!state.clock.utc_valid) return false;
 
     const presentation::DisplayTime local =
         presentation::convertUtcForDisplay(state.clock.utc, state.zone);
     unsigned hour = local.civil.hour;
-    if (hour_format == ce_config::HourFormat::twelve_hour) {
-        hour %= 12;
-        if (hour == 0) hour = 12;
-    }
+    // The WS2812 clock face is a consumer 12-hour display in every profile.
+    // Keep UTC and any other 24-hour representations in state/diagnostics.
+    hour %= 12;
+    if (hour == 0) hour = 12;
 
     int position = 0;
-    if (hour_format == ce_config::HourFormat::twenty_four_hour || hour >= 10)
+    if (hour >= 10)
         text[position++] = static_cast<char>('0' + hour / 10);
     text[position++] = static_cast<char>('0' + hour % 10);
     text[position++] = ':';
@@ -33,12 +31,11 @@ inline bool formatHHMM(const presentation::State& state, char (&text)[6],
 
 template <typename LogicalFrame, typename Color>
 inline bool render(const presentation::State& state, LogicalFrame& frame,
-                   const Color& color,
-                   ce_config::HourFormat hour_format = ce_config::hour_format) {
+                   const Color& color) {
     frame.clear();
     char text[6];
-    if (!formatHHMM(state, text, hour_format)) return false;
+    if (!formatHHMM(state, text)) return false;
     return compact_clock_font::drawCenteredText(
-        frame, text, 32, 1, color);
+        frame, text, 32, 0, color);
 }
 }

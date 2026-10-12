@@ -46,8 +46,9 @@ physical verification.
   local civil dates.
 - Format the selected civil time before measuring its active font's actual
   rendered width. Center every draw on the 32-column panel with
-  `x = (32 - rendered_width) / 2` and deterministic integer placement. In
-  12-hour mode omit the leading zero; 24-hour mode uses two hour digits.
+  `x = (32 - rendered_width) / 2` and deterministic integer placement. The
+  physical consumer clock face is always 12-hour: omit the leading zero and
+  show 12 at midnight and noon. Other representations may use 24-hour time.
   Presentation may subtly animate only a changed centering origin, using old
   and new logical positions; it must not delay or affect the current time.
   Effects consume layout positions and never own formatting or timekeeping.
@@ -107,11 +108,12 @@ physical verification.
 - The WS2812 driver owns a fixed 768-byte framebuffer and PIO0 SM0 only in
   selected builds. The 32x8 mapping, transport, corners, perimeter, row/column
   scans, temporary 5x7 font, full-height 6x8 candidate, and continuous clock
-  mode were physically evaluated. The 6x8 candidate was judged too large for
-  the intended product/effect space. The normal development runtime uses the
-  conventional compact 4x6 clock font with plain unslashed zero, centered by
-  actual string width; its six rows are drawn at y=1..6 and row 7 stays unused
-  by primary time glyphs. The former geometry/fill/raw-chase
+  mode were physically evaluated. The approved physical clock glyphs are the
+  exact variable-width 5x7 table in Consumer Edition Requirements Section 5;
+  digit 1 is width 3, colon width 1, and spacing is 1. The physical face is
+  always unpadded 12-hour time with 12 at midnight/noon and draws at y=0..6.
+  Glyph geometry stays independent of effects. Exact approved-glyph physical
+  evaluation is pending. The former geometry/fill/raw-chase
   walkthrough is retired from normal runtime. Development console `color`
   reports the current color and `color <r> <g> <b>` selects temporary logical
   RGB (each channel 0..255); color changes refresh the frame upstream of
