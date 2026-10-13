@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include "clock_recenter_slide.hpp"
+#include "clock_presentation_transition.hpp"
 #include "presentation_state.hpp"
 #include "ws2812_pixels.hpp"
 #include "ws2812_wire_frame.hpp"
@@ -36,15 +36,13 @@ private:
     bool last_frame_was_pattern_ = false;
 #endif
     informational_overlay::BreathingAnimator holdover_breather_;
-    clock_recenter_slide::State recenter_slide_;
+    clock_presentation_transition::State clock_transition_;
     informational_overlay::Frame last_overlay_frame_;
     uint32_t last_holdover_redraw_us_ = 0;
     bool overlay_frame_initialized_ = false;
     bool holdover_was_active_ = false;
-    char last_text_[6] = {};
     bool initialized_ = false;
     bool frame_dirty_ = true;
-    bool has_rendered_text_ = false;
 
     void updateFrame(const presentation::State& state, bool force_refresh,
                      const informational_overlay::Frame& overlay);

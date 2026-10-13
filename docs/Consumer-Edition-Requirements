@@ -401,15 +401,54 @@ to the clock. Pink was rejected on the current panel and light-gray grid plus
 diffuser; provisional blue is now used and its exact RGB remains open for
 physical tuning.
 
-Timing/GPS/PPS/satellite health uses (31,4), in very low output intensity:
-green when GPS is valid, PPS is present and locked, and satellite count is
-greater than 4; amber at exactly 4 satellites with valid GPS/PPS; and muted
-soft red when GPS is invalid, PPS is invalid/not locked, or satellite count is
-below 4. Four is the minimum acceptable satellite count. This is a calm status
-mark, not an alarm beacon. It reports external timing-source health and may
-remain red throughout HOLDOVER and HOLDOVER_EXPIRED.
+### Timing-health and holdover status semantics
 
-The separate holdover-quality pixel is at (31,3). Its physically approved
+Timing/GPS/PPS health uses (31,4), at very low output intensity. This pixel
+reports the health of the complete clock timing path, not raw receiver activity
+or satellite count alone. It consumes already-established receiver and timing-
+engine health state and must not duplicate qualification logic or become a
+second source of timing truth.
+
+For status thresholds, satellite count means satellites **used in the fix**,
+not satellites merely visible or in view. Satellites-in-view may be reported in
+serial diagnostics, but it does not authorize a healthy clock indication.
+When the timing engine is fully qualified and all required GPS, RMC, PPS,
+freshness, and association conditions are healthy, the normal solid colors are:
+
+- solid green for five or more satellites used;
+- solid amber for exactly four satellites used; and
+- solid red for fewer than four satellites used.
+
+Four satellites used is the minimum acceptable normal fix level. Green or
+amber is forbidden merely because a receiver reports enough satellites: the
+timing path must first be genuinely qualified. When the clock is not in
+holdover, solid red also covers invalid fix, stale GPS or RMC data, missing or
+stale PPS, unqualified RMC/PPS association, initial acquisition,
+reacquisition, and equivalent unhealthy/not-qualified states. Exact mapping
+from receiver/parser observations into authoritative timing-engine states is
+deferred to real GPS integration; the status layer consumes that result rather
+than reimplementing it.
+
+After GPS/PPS returns from holdover, good satellite counts do not immediately
+restore green or amber. The normal reacquisition and qualification path must
+complete first. Only then does five-or-more used select green or exactly four
+used select amber; all other cases follow the unhealthy rule.
+
+The separate holdover-quality pixel is at (31,3). Together, the two status
+positions express this product-level state language:
+
+- **GREEN:** timing healthy and qualified, with at least five satellites used;
+- **AMBER:** timing healthy and qualified, with exactly four satellites used;
+- **RED:** not qualified, unhealthy, acquiring, stale, or reacquiring while not
+  in holdover;
+- **RED BREATHING:** continuous holdover under 24 hours; and
+- **RED BEACON:** continuous holdover at or beyond 24 hours.
+
+The external-source health pixel may remain solid red throughout HOLDOVER and
+HOLDOVER_EXPIRED while the separate holdover pixel supplies the breathing or
+beacon distinction.
+
+The holdover pixel's physically approved
 presentation for Dad's current panel is pure red, with stable direct codes 1..8,
 a cosine breathe of approximately 2.5 seconds up and down, and an intentional
 OFF dwell around the trough, for an approximately 5-second full cycle. The
@@ -421,8 +460,12 @@ Holdover pixel semantics:
 - OFF: timing is not in HOLDOVER (including LOCKED and UNSYNCED).
 - Breathing red: external timing is lost but remains within the qualified
   24-hour HOLDOVER window.
-- Flashing red: HOLDOVER_EXPIRED; displayed time remains best-effort and
-  unqualified. Flash cadence remains a presentation tuning parameter.
+- Red warning beacon: continuous holdover has reached 24 hours and the clock is
+  in HOLDOVER_EXPIRED; displayed time remains best-effort and unqualified. The
+  intended character is mostly OFF with a brief restrained red flash, not a
+  frantic blink. Initial physical-tuning bounds are approximately 150–250 ms
+  flash duration and a 1.5–2.5 second repeat period; no exact cadence is frozen.
+  This beacon is future, physically unverified behavior.
 
 The visual development proof (`h on` / `h off`) exists. The real holdover
 state/timer and HOLDOVER_EXPIRED behavior do not exist in firmware, so
@@ -431,7 +474,9 @@ the authoritative timing state.
 
 Current presentation RGB values are calendar blue (0,0,255), approved health
 green (0,255,32), health amber (255,128,0), and muted health red (160,32,40).
-Calendar blue is acceptable for now. Health colors/thresholds remain unchanged.
+Calendar blue is acceptable for now. The current health proof colors remain
+available; final live mapping to the authoritative health states above is part
+of future real-receiver integration.
 The previous holdover RGB(255,128,160), output-brightness 2..24 pass was
 physically rejected: wrong hue, excessive peak, visible stepping, and
 intermittent unrelated display flicker. It had only 23 final RGB states during
@@ -498,6 +543,37 @@ Development proof controls are `s {good|min|bad|off|live}`, `h {on|off}`, and
 GPS/PPS qualification or authoritative UTC. `s off` forces the health pixel
 black; only `s live` restores live health input. `h off` restores the actual
 holdover source (currently absent, so it remains off).
+
+### Serial-only GPS integration diagnostics
+
+The consumer display remains limited to the status language above. Satellite
+counts and receiver/debug text are serial diagnostics only and must not be
+added to the clock face. Hardware integration should make useful fields
+available through a bounded status command, optional verbose diagnostics, or
+similarly console-friendly output rather than requiring them all to stream
+continuously. Useful fields include:
+
+- receiver state such as NO DATA, ACQUIRING, LOCKED, or STALE;
+- satellites used in the fix and, if available, satellites in view;
+- fix validity/quality, latest GPS UTC/date, and optional position/altitude in
+  verbose bring-up output;
+- PPS presence, age, and measured cadence/interval;
+- latest valid RMC age, RMC/PPS association state, and useful RMC start or
+  completion timing relative to PPS;
+- timing-engine state such as QUALIFYING, DISCIPLINED, HOLDOVER, REACQUIRING,
+  or HOLDOVER-WARN, plus holdover duration; and
+- UART/NMEA activity such as last-byte age, valid sentence count, checksum
+  failures, and stale or discarded sentences.
+
+The AAC-CE NEO-7 module and antenna have been bench-tested before Pico
+integration. PPS output was observed and measured on the Rigol oscilloscope;
+UART TX activity was present, and decoded Rigol UART data appeared valid and
+functional. This establishes useful receiver bench evidence, not completed
+AAC-CE integration or final qualification behavior. Pico integration must still
+verify the actual NMEA sentence mix, satellite/fix reporting, RMC timing
+relative to PPS, compatibility with the existing timing windows, and antenna
+performance in its intended placement.
+
 The physical panel has visibly responded to the raw-index chase. Logical
 mapping is implemented as top-left origin, left-to-right column progression,
 and alternating vertical traversal, matching the physically observed panel
@@ -541,7 +617,7 @@ numerals. Primary glyphs render at y=0..6. For Dad's build, row 7 x=0..30 is
 the day marker, (31,7) is available, (31,4) is timing health, and (31,3) is
 holdover.
 
-The intended future presentation order is authoritative/civil presentation
+The presentation order is conceptually authoritative/civil presentation
 time → physical 12-hour formatting → active-font width measurement →
 centered target layout → optional transition/recenter presentation behavior →
 overlays/effects → logical framebuffer → brightness/output processing →
@@ -559,10 +635,152 @@ nonblocking display service. Authoritative time never waits for the animation,
 and the later calendar/health/holdover overlay remains independent. This
 deliberately narrow state is not a generalized animation framework; future
 presentation effects may build on the same separation.
-Future scroll, dissolve, trails, glow, particles, swirl, and holiday
-transitions consume old and new logical positions rather than assuming a
-permanent x coordinate. They remain unimplemented and must preserve clear
-time-quality indication.
+
+### Time-event effect hierarchy
+
+**Approved presentation behavior.** The minimal civil-time event resolver and
+ordinary-hour dissolve are implemented; special-event choreography and all
+after-effects remain planned. Presentation conceptually separates five decisions:
+
+1. classify the civil-time event;
+2. select exactly one primary transition;
+3. select any optional after-effect;
+4. apply layout and actual-width centering behavior; and
+5. apply theme, holiday, or birthday palette/background treatment.
+
+These decisions are related but are not interchangeable. In particular,
+matching more than one event rule must never cause multiple primary
+transitions to stack. The small deterministic presentation-owned resolver now
+classifies ordinary and reserved special civil-time events and selects at most
+one primary-transition path. Later special implementations may add their
+documented after-effect selection without introducing a large generalized
+animation framework or speculative abstractions. Event classification uses
+local civil time downstream of the
+authoritative UTC clock; neither the resolver nor any effect may qualify,
+advance, delay, or otherwise control timekeeping.
+
+Primary-transition precedence is:
+
+    major special civil-time event
+        supersedes
+    ordinary top-of-hour event
+        supersedes
+    ordinary minute change
+
+The current major events are 6:00 AM, 12:00 PM (noon), 6:00 PM, and 12:00 AM
+(midnight). An ordinary top-of-hour transition applies only when none of these
+higher-priority events owns the transition.
+
+#### Ordinary minute and top-of-hour behavior
+
+An ordinary minute change has no special primary effect. It performs a normal
+redraw and uses the recenter slide only when actual rendered width changes the
+centered origin. The clock should remain calm rather than animating every
+minute for decoration.
+
+An ordinary, non-special top of hour uses this sequence:
+
+    old time
+        -> dissolve primary transition
+        -> new time resolves
+        -> recenter slide only if the final centered x changed
+        -> settle
+
+The dissolve is a subtle visual hourly chime. It and the recenter slide are
+sequential, never concurrent: dissolve owns the primary transition, while the
+already physically verified recenter slide remains layout behavior. The slide
+is omitted when the new actual-width centered origin equals the prior origin.
+Thus `9:59`→`10:00` and `12:59`→`1:00` use the ordinary hourly dissolve and
+then recenter if required. The implemented pixel dissolve uses eight
+deterministic coordinate buckets at 35 ms each in both directions with a 40 ms
+dark midpoint (600 ms nominal total), advances at most once per display-service
+call, and remains pending physical tuning and verification.
+
+#### Major special civil-time events
+
+Each major event replaces the ordinary hourly dissolve, owns one primary
+transition, and owns any required change from the old centered origin to the
+new one. Particles, blocks, collapse, reveal, or reassembly may temporarily
+place pixels wherever the choreography requires, but the transition must land
+the new time directly at its normal final actual-width centered position. The
+effect owns how the old layout becomes the new layout; it does not redefine
+where the settled time belongs. No ordinary recenter-slide follow-up is ever
+appended to a major transition. The result must retain the approved glyph
+geometry and 12-hour formatting.
+
+Physical observation on Dad's display establishes two relevant cases:
+
+- `5:59`→`6:00` retains effectively the same centered origin. The 6:00 AM and
+  6:00 PM special choreography therefore builds or reveals `6:00` at that
+  existing/final position, with no later recenter slide.
+- `11:59`→`12:00` has a small centered-origin change. Noon and midnight
+  choreography must absorb that geometry change internally and place `12:00`
+  at its final centered position before settle, with no later recenter slide.
+
+This ownership rule is specific to major special transitions. The ordinary
+top-of-hour sequence above remains dissolve, then recenter if its final origin
+changed, then settle.
+
+- **6:00 AM:** use a special morning primary transition; its choreography is
+  intentionally TBD. It builds or reveals `6:00` at the unchanged existing/final
+  centered position. After the new time settles, run a blue/cool morning color
+  sweep as an after-effect.
+- **12:00 PM / noon:** outgoing `11:59` pixels explode outward, then
+  return/reassemble as `12:00` at `12:00`'s final centered position, absorbing
+  the observed centering change inside the primary choreography. Settle there;
+  do not append the ordinary recenter slide. Noon after-effect and color-sweep
+  details are TBD; do not infer a palette or behavior.
+- **6:00 PM:** assemble the centered new `6:00` glyphs with a Tetris-like
+  falling-block primary transition. Pixels or small block-like groups fall
+  downward into the unchanged existing/final glyph positions. This is a visual
+  reference, not literal gameplay or tetromino logic, and it must not alter
+  glyph geometry. After settle, run an amber/warm evening color sweep as an
+  after-effect.
+- **12:00 AM / midnight:** collapse or remove outgoing `11:59` into darkness,
+  allow a brief dark/blackout moment, then reveal `12:00` at `12:00`'s final
+  centered position, absorbing the observed centering change inside the
+  primary choreography. Settle there; do not append the ordinary recenter
+  slide. After settle, run a black/off sweep. Black is opaque logical
+  RGB(0,0,0), not transparent/no-op. Exact choreography and timing remain
+  subject to physical tuning.
+
+For example, noon must not accidentally combine dissolve, recenter, noon
+explosion, a sweep, and an unrelated effect. The noon primary transition owns
+the event; after settle, only its optional noon after-effect may follow.
+
+#### Primary transitions, after-effects, and motion
+
+A **primary transition** defines how the old displayed time becomes the new
+displayed time: dissolve, explode/reassemble, falling-block assembly, or
+midnight collapse/reveal. An **after-effect** is a short accent that begins
+only after the new time is settled and correct: the blue morning sweep, amber
+evening sweep, black midnight sweep, or a future approved noon accent.
+After-effects do not compete with or run concurrently with primary transitions
+unless a later reviewed design explicitly changes that rule.
+
+Motion within an effect should be fairly swift and responsive. The overall
+event may remain visible through a brief settle/hold and optional after-effect,
+but slow crawling pixel motion is not the goal. The new correct time should
+become visually understandable early. Exact timing for unimplemented effects
+is deliberately not frozen before physical tuning.
+
+#### Theme, holiday, and birthday interaction
+
+Themes do not replace the time-event hierarchy by default. Holiday and
+birthday presentation primarily modifies palette, background scene, accent
+colors, and effect colors while the same event resolver chooses behavior. A
+Christmas noon still uses the noon primary transition with an appropriate
+theme treatment; a Halloween 6:00 PM still uses the evening falling-block
+transition; midnight entering a holiday may reveal the new day's theme.
+Theme/date policy and event behavior remain separate presentation concerns and
+must not create separate timing logic in transport or display drivers.
+
+All transitions and themes operate around or through the stable glyph mask;
+they do not redesign typography. Every settled time ends at the ordinary
+actual-width centered position. Persistent calendar, timing-health, and
+holdover pixels retain their later overlay priority. Other candidate effects
+such as scroll, trails, glow, particles, and swirl remain unselected and
+unimplemented.
 
 ### Clock glyph shape and paint semantics
 
@@ -613,11 +831,13 @@ The minimal compositor and black/off versus transparent semantics are
 implemented in the renderer/compositor boundary. Keep this foundation small
 before adding substantial theme, holiday, or effect work.
 
-Animation style is not fixed. Fades, dissolves, decays, color transitions, and
-rolling effects are candidates for early development-build testing. Fonts,
-overlays, calendar information, and special-day themes may be explored in
-development builds. Production effects, status hierarchy, and exact layouts
-remain to be specified and must preserve clear time-quality indication.
+The time-event hierarchy, selected primary-transition directions, after-effect
+ordering, and theme interaction are specified above. The resolver, special
+precedence, and ordinary hourly dissolve are implemented; the dissolve remains
+physically unverified. Special transitions and after-effects remain
+unimplemented, and their exact motion timing and explicitly marked choreography
+details require development-build experiments and physical review. Persistent
+status hierarchy and clear time-quality indication remain mandatory.
 
 Transfer characterization is now available in the WS2812 development build.
 `g off` selects the current identity output and preserves current behavior;

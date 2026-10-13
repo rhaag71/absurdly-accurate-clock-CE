@@ -2,7 +2,6 @@
 
 #if defined(AAC_DISPLAY_WS2812)
 #include <Arduino.h>
-#include <cstring>
 #include "hardware/gpio.h"
 #include "hardware/dma.h"
 #include "hardware/clocks.h"
@@ -71,8 +70,7 @@ void Driver::begin(const presentation::State&) {
 
     pixels_.clear();
     frame_dirty_ = true; // The first frame is completely dark.
-    has_rendered_text_ = false;
-    recenter_slide_.reset();
+    clock_transition_.reset();
     brightness_refresh_.reset();
     color_refresh_.reset();
     transfer_refresh_.reset();
@@ -92,6 +90,7 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     const TestPattern pattern = testPattern();
     if (pattern != TestPattern::clock) {
+        clock_transition_.reset();
         if (!last_frame_was_pattern_ || force_refresh) {
             renderTestPattern(pixels_, pattern);
             frame_dirty_ = true;
@@ -108,21 +107,18 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
         if (rendered_width < 0 || rendered_width > logical_width) return;
         centered_x = (logical_width - rendered_width) / 2;
     }
-    const bool placement_changed =
-        recenter_slide_.update(valid, centered_x, state.now_us);
-    if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0 &&
-        !force_refresh && !placement_changed)
-        return;
-    if (!valid && !has_rendered_text_ && !force_refresh) {
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
-        if (last_frame_was_pattern_) {
-            pixels_.clear();
-            frame_dirty_ = true;
-            last_frame_was_pattern_ = false;
-        }
-#endif
-        return;
+    uint8_t civil_hour = 0U;
+    uint8_t civil_minute = 0U;
+    if (valid) {
+        const presentation::DisplayTime local =
+            presentation::convertUtcForDisplay(state.clock.utc, state.zone);
+        civil_hour = local.civil.hour;
+        civil_minute = local.civil.minute;
     }
+    const clock_presentation_transition::UpdateResult transition =
+        clock_transition_.update(valid, civil_hour, civil_minute, text,
+                                 centered_x, state.now_us);
+    if (!force_refresh && !transition.changed) return;
 
     const display_appearance::Rgb color =
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
@@ -136,25 +132,10 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
 #else
         {0, 0, 0};
 #endif
-    if (valid) {
-        // The newest time is painted immediately. Only its whole-column
-        // logical origin moves; the authoritative snapshot never waits.
-        display_compositor::composeClockAt(
-            pixels_, text, recenter_slide_.currentX(), 0, background,
-            display_compositor::solid(color));
-    } else {
-        display_compositor::beginFrame(pixels_, background);
-    }
+    clock_transition_.render(pixels_, background, color);
     // Persistent state/date pixels are painted after every proof background
     // and clock mask so inversion and future decoration cannot cover them.
     informational_overlay::apply(pixels_, overlay);
-    if (valid) {
-        std::memcpy(last_text_, text, sizeof(last_text_));
-        has_rendered_text_ = true;
-    } else {
-        last_text_[0] = 0;
-        has_rendered_text_ = false;
-    }
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     last_frame_was_pattern_ = false;
 #endif
