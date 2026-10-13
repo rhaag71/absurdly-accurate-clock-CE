@@ -98,6 +98,10 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/display_compositor_test.cpp -o "$test_dir/display_compositor"
 "$test_dir/display_compositor"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    src/clock_state.cpp src/display_time.cpp \
+    test/host/clock_recenter_slide_test.cpp -o "$test_dir/clock_recenter_slide"
+"$test_dir/clock_recenter_slide"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
     src/display_time.cpp test/host/informational_overlay_test.cpp \

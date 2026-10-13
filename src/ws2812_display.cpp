@@ -72,6 +72,7 @@ void Driver::begin(const presentation::State&) {
     pixels_.clear();
     frame_dirty_ = true; // The first frame is completely dark.
     has_rendered_text_ = false;
+    recenter_slide_.reset();
     brightness_refresh_.reset();
     color_refresh_.reset();
     transfer_refresh_.reset();
@@ -101,8 +102,16 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
 #endif
     char text[6] = {};
     const bool valid = clock_text_renderer::formatHHMM(state, text);
+    int centered_x = 0;
+    if (valid) {
+        const int rendered_width = compact_clock_font::textWidth(text);
+        if (rendered_width < 0 || rendered_width > logical_width) return;
+        centered_x = (logical_width - rendered_width) / 2;
+    }
+    const bool placement_changed =
+        recenter_slide_.update(valid, centered_x, state.now_us);
     if (valid && has_rendered_text_ && std::memcmp(last_text_, text, sizeof(text)) == 0 &&
-        !force_refresh)
+        !force_refresh && !placement_changed)
         return;
     if (!valid && !has_rendered_text_ && !force_refresh) {
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
@@ -128,8 +137,10 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
         {0, 0, 0};
 #endif
     if (valid) {
-        display_compositor::composeClock(
-            pixels_, text, logical_width, 0, background,
+        // The newest time is painted immediately. Only its whole-column
+        // logical origin moves; the authoritative snapshot never waits.
+        display_compositor::composeClockAt(
+            pixels_, text, recenter_slide_.currentX(), 0, background,
             display_compositor::solid(color));
     } else {
         display_compositor::beginFrame(pixels_, background);

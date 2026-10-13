@@ -546,14 +546,19 @@ time → physical 12-hour formatting → active-font width measurement →
 centered target layout → optional transition/recenter presentation behavior →
 overlays/effects → logical framebuffer → brightness/output processing →
 display transport. Effects and special-day behavior are presentation policy;
-they do not own formatting or authoritative time. If a new string changes the
-centered target origin, presentation may subtly animate from the prior logical
-position to the new one (for example, `9:59`→`10:00` or `12:59`→`1:00`).
-Animation is relevant only when the target origin changes; no shift or wobble
-is required when it stays the same. The new time value becomes the
-presentation's current value immediately; animation may affect only its visual
-placement and must not hold back the update. Authoritative time never waits
-for an animation.
+they do not own formatting or authoritative time. The first implemented
+transition is a whole-column recenter slide. If a new string changes the
+centered target origin, the new time is drawn immediately at the current visual
+origin and moves one column toward its new target every 80 ms (for example,
+`9:59`→`10:00` or `12:59`→`1:00`). It does not activate when the measured
+target origin stays unchanged. A new time arriving during a slide replaces
+obsolete content and retargets from the current visual origin. Invalid time
+clears the slide immediately; the first subsequent valid time is drawn directly
+at its measured center. Progress uses monotonic elapsed time in the normal
+nonblocking display service. Authoritative time never waits for the animation,
+and the later calendar/health/holdover overlay remains independent. This
+deliberately narrow state is not a generalized animation framework; future
+presentation effects may build on the same separation.
 Future scroll, dissolve, trails, glow, particles, swirl, and holiday
 transitions consume old and new logical positions rather than assuming a
 permanent x coordinate. They remain unimplemented and must preserve clear
