@@ -639,9 +639,11 @@ presentation effects may build on the same separation.
 ### Time-event effect hierarchy
 
 **Approved presentation behavior.** The minimal civil-time event resolver,
-ordinary-hour dissolve, and SixPM falling-glyph/amber effect are implemented;
-SixPM physical verification is pending. SixAM, noon, and midnight choreography
-remain planned. Presentation conceptually separates five decisions:
+ordinary-hour dissolve, SixPM effect, and first-pass SixAM sunrise effect are
+implemented. SixPM is physically tuned; its amber fade-back still needs later
+correction. The SixAM implementation is an unverified first physical attempt.
+Noon and midnight choreography remain planned. Presentation conceptually
+separates five decisions:
 
 1. classify the civil-time event;
 2. select exactly one primary transition;
@@ -723,16 +725,37 @@ This ownership rule is specific to major special transitions. The ordinary
 top-of-hour sequence above remains dissolve, then recenter if its final origin
 changed, then settle.
 
-- **6:00 AM:** use a special morning primary transition; its choreography is
-  intentionally TBD. It builds or reveals `6:00` at the unchanged existing/final
-  centered position. After the new time settles, run a blue/cool morning color
-  sweep as an after-effect.
+- **6:00 AM:** the first-pass sunrise remains implemented and awaits physical
+  retest after a geometry/color correction. Testing found the original
+  13-pixel sun too small and the broad blue wash visually garbled. At a genuine
+  `05:59`→`06:00` boundary, old glyphs clear for a 200 ms dark beat, then an
+  analytic 25-pixel-diameter solid circle (`RGB(255,64,0)`, experimental)
+  rises over 3.5 s from below, centered on the actual rendered `6:00` glyph.
+  At its final center y=6, its circle reaches/includes display row 0 and the
+  glyph appears as opaque black negative space. The fully risen sun/shadow
+  holds for 500 ms; only then does a 2.5 s irregular top-down wash begin. It
+  can paint only pixels in the final `6:00` glyph mask, using morning blue
+  (`RGB(64,160,255)`, experimental). It cannot color the background, sun
+  outside the glyph, or informational
+  overlays. After the wash, an eight-bucket, 75 ms-per-bucket deterministic
+  dissolve removes the sun; the primary sequence ends with blue glyphs only.
+  A genuine completed event enables an event-derived blue tint: 100/80/60/40/20/0%
+  from `06:00` through `06:05`, then the exact normal clock-color path. Direct
+  entry at `06:03` remains normal colored. Revised geometry/color still needs
+  hardware validation. The prior logical sun yellow `RGB(255,255,0)` appeared
+  green on the panel, while `RGB(192,224,255)` appeared nearly white; the new
+  values are not physically approved. Choreography/timing were intentionally
+  left unchanged pending color evaluation. SixAM blue-to-white and SixPM
+  amber-to-white color paths both need future physical color/gamma or
+  per-channel correction; SixPM has shown pink/purple and green-ish intermediate
+  colors with lingering purple near the end.
 - **12:00 PM / noon:** outgoing `11:59` pixels explode outward, then
   return/reassemble as `12:00` at `12:00`'s final centered position, absorbing
   the observed centering change inside the primary choreography. Settle there;
   do not append the ordinary recenter slide. Noon after-effect and color-sweep
   details are TBD; do not infer a palette or behavior.
-- **6:00 PM:** this is implemented, with physical verification pending. At a
+- **6:00 PM:** the effect is implemented and physically tuned; its amber
+  fade-back still needs a separate correction. At a
   genuine `17:59`→`18:00` event, old glyphs clear, followed by a 60 ms dark
   beat. The actual centered `6:00` occupancy mask is assembled by vertical
   pixel rain. Each
@@ -747,7 +770,8 @@ changed, then settle.
   different rates. A global hash-priority order gives lower destinations a
   statistical preference without row barriers, strict row order, or a
   left-to-right release. The current 6:00 mask's calculated rain duration is
-  3.129 seconds. This revised cadence still requires physical validation.
+  3.129 seconds. The current rain and scanner choreography is physically
+  tuned; the separate amber fade-back correction remains pending.
   The complete normal-colored `6:00` then settles for 550 ms. An amber scanner
   paints only the actual glyph slice at each x: it travels visually
   right-to-left at 40 ms/column, holds at the visual left edge for 350 ms,
@@ -856,11 +880,11 @@ before adding substantial theme, holiday, or effect work.
 
 The time-event hierarchy, selected primary-transition directions, after-effect
 ordering, and theme interaction are specified above. The resolver, special
-precedence, and ordinary hourly dissolve are implemented; the dissolve remains
-physically unverified. Special transitions and after-effects remain
-unimplemented, and their exact motion timing and explicitly marked choreography
-details require development-build experiments and physical review. Persistent
-status hierarchy and clear time-quality indication remain mandatory.
+precedence, and ordinary hourly dissolve are implemented and physically
+verified. SixPM is physically tuned, with its amber fade-back correction still
+pending; the first-pass SixAM sunrise is implemented but awaits physical
+verification. Noon and midnight remain unimplemented. Persistent status
+hierarchy and clear time-quality indication remain mandatory.
 
 Transfer characterization is now available in the WS2812 development build.
 `g off` selects the current identity output and preserves current behavior;

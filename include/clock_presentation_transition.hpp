@@ -4,6 +4,7 @@
 
 #include "clock_dissolve.hpp"
 #include "clock_recenter_slide.hpp"
+#include "clock_six_am_effect.hpp"
 #include "clock_six_pm_effect.hpp"
 #include "compact_clock_font.hpp"
 #include "presentation_time_event.hpp"
@@ -32,12 +33,23 @@ class State {
     if (!valid) {
       const bool changed = has_text_ || dissolve_.active() ||
                            recenter_.initialized() || six_pm_.primaryActive() ||
-                           six_pm_.tintActive();
+                           six_pm_.tintActive() || six_am_.primaryActive() ||
+                           six_am_.tintActive();
       clearVisualState();
       return {changed, event};
     }
 
     const bool text_changed = !has_text_ || !sameText(current_text_, text);
+
+    if (six_am_.primaryActive()) {
+      if (text_changed || civil_hour != 6U || civil_minute != 0U) {
+        settleDirect(text, centered_x, now_us);
+        return {true, event};
+      }
+      const clock_six_am_effect::AdvanceResult advance =
+          six_am_.update(now_us, civil_hour, civil_minute);
+      return {advance.changed, event};
+    }
 
     if (six_pm_.primaryActive()) {
       if (text_changed || civil_hour != 18U || civil_minute != 0U) {
@@ -51,6 +63,8 @@ class State {
 
     const clock_six_pm_effect::AdvanceResult tint_update =
         six_pm_.updateTint(civil_hour, civil_minute);
+    const clock_six_am_effect::AdvanceResult morning_tint_update =
+        six_am_.updateTint(civil_hour, civil_minute);
 
     // A newer displayed time invalidates the old visual source material. The
     // latest valid presentation wins and settles directly; no queue is kept.
@@ -82,8 +96,21 @@ class State {
         six_pm_.reset();
         return {true, event};
       }
-      // SixAM, Noon, and Midnight choreography remains reserved. Their layout
+      if (event == presentation_time_event::Event::six_am) {
+        six_pm_.reset();
+        six_am_.reset();
+        dissolve_.reset();
+        recenter_.reset();
+        recenter_.update(true, centered_x, now_us);
+        copyText(current_text_, text);
+        has_text_ = true;
+        if (six_am_.start(text, centered_x, now_us)) return {true, event};
+        settleDirect(text, centered_x, now_us);
+        return {true, event};
+      }
+      // Noon and Midnight choreography remains reserved. Their layout
       // contract is honored by settling directly at the final centered origin.
+      six_am_.reset();
       six_pm_.reset();
       settleDirect(text, centered_x, now_us);
       return {true, event};
@@ -104,7 +131,9 @@ class State {
       has_text_ = true;
     }
     const bool position_changed = recenter_.update(true, centered_x, now_us);
-    return {text_changed || position_changed || tint_update.changed, event};
+    return {text_changed || position_changed || tint_update.changed ||
+                morning_tint_update.changed,
+            event};
   }
 
   void reset() {
@@ -127,10 +156,16 @@ class State {
       six_pm_.render(pixels, background, clock_color);
       return true;
     }
+    if (six_am_.primaryActive()) {
+      six_am_.render(pixels, background);
+      return true;
+    }
     pixels.fill(background);
     return compact_clock_font::drawText(pixels, current_text_,
                                         recenter_.currentX(), 0,
-                                        six_pm_.tintedColor(clock_color));
+                                        six_am_.tintActive()
+                                            ? six_am_.tintedColor(clock_color)
+                                            : six_pm_.tintedColor(clock_color));
   }
 
   bool hasText() const { return has_text_; }
@@ -138,9 +173,13 @@ class State {
   bool dissolveActive() const { return dissolve_.active(); }
   bool recenterActive() const { return recenter_.active(); }
   bool sixPmActive() const { return six_pm_.primaryActive(); }
+  bool sixAmActive() const { return six_am_.primaryActive(); }
   bool eveningTintActive() const { return six_pm_.tintActive(); }
+  bool morningTintActive() const { return six_am_.tintActive(); }
   uint8_t eveningAmberPercent() const { return six_pm_.amberPercent(); }
+  uint8_t morningBluePercent() const { return six_am_.bluePercent(); }
   const clock_six_pm_effect::State& sixPmEffect() const { return six_pm_; }
+  const clock_six_am_effect::State& sixAmEffect() const { return six_am_; }
   int currentX() const { return recenter_.currentX(); }
   int targetX() const { return recenter_.targetX(); }
   const clock_dissolve::State& dissolve() const { return dissolve_; }
@@ -173,6 +212,7 @@ class State {
 
   void settleDirect(const char* text, int centered_x, uint32_t now_us) {
     dissolve_.reset();
+    six_am_.reset();
     six_pm_.reset();
     recenter_.reset();
     recenter_.update(true, centered_x, now_us);
@@ -182,6 +222,7 @@ class State {
 
   void clearVisualState() {
     dissolve_.reset();
+    six_am_.reset();
     six_pm_.reset();
     recenter_.reset();
     current_text_[0] = '\0';
@@ -190,6 +231,7 @@ class State {
 
   presentation_time_event::Resolver event_resolver_{};
   clock_dissolve::State dissolve_{};
+  clock_six_am_effect::State six_am_{};
   clock_six_pm_effect::State six_pm_{};
   clock_recenter_slide::State recenter_{};
   char current_text_[kTextCapacity]{};
