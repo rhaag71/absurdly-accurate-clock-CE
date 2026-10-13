@@ -638,9 +638,10 @@ presentation effects may build on the same separation.
 
 ### Time-event effect hierarchy
 
-**Approved presentation behavior.** The minimal civil-time event resolver and
-ordinary-hour dissolve are implemented; special-event choreography and all
-after-effects remain planned. Presentation conceptually separates five decisions:
+**Approved presentation behavior.** The minimal civil-time event resolver,
+ordinary-hour dissolve, and SixPM falling-glyph/amber effect are implemented;
+SixPM physical verification is pending. SixAM, noon, and midnight choreography
+remain planned. Presentation conceptually separates five decisions:
 
 1. classify the civil-time event;
 2. select exactly one primary transition;
@@ -694,7 +695,8 @@ Thus `9:59`→`10:00` and `12:59`→`1:00` use the ordinary hourly dissolve and
 then recenter if required. The implemented pixel dissolve uses eight
 deterministic coordinate buckets at 35 ms each in both directions with a 40 ms
 dark midpoint (600 ms nominal total), advances at most once per display-service
-call, and remains pending physical tuning and verification.
+call, and is physically verified. Its step timing remains a presentation
+tuning value, not a timing-engine parameter.
 
 #### Major special civil-time events
 
@@ -730,12 +732,32 @@ changed, then settle.
   the observed centering change inside the primary choreography. Settle there;
   do not append the ordinary recenter slide. Noon after-effect and color-sweep
   details are TBD; do not infer a palette or behavior.
-- **6:00 PM:** assemble the centered new `6:00` glyphs with a Tetris-like
-  falling-block primary transition. Pixels or small block-like groups fall
-  downward into the unchanged existing/final glyph positions. This is a visual
-  reference, not literal gameplay or tetromino logic, and it must not alter
-  glyph geometry. After settle, run an amber/warm evening color sweep as an
-  after-effect.
+- **6:00 PM:** this is implemented, with physical verification pending. At a
+  genuine `17:59`→`18:00` event, old glyphs clear, followed by a 60 ms dark
+  beat. The actual centered `6:00` occupancy mask is assembled by vertical
+  pixel rain. Each
+  occupied mask pixel has its own fixed fall record, release offset, current y,
+  and final x/y; the rain frame is composed from landed and individually moving
+  pixels, never a translated full-glyph mask. Physical testing exposed the
+  previous row-correlated motion as an "inchworm" whole-glyph fall. Physical
+  testing confirmed independent falling pixels are the right mechanism, but
+  found the prior destination-row schedule too orderly. The revised rain uses
+  fast independent 50 ms/row drops separated by short deterministic irregular
+  release gaps (35–85 ms); different vertical sections should build at
+  different rates. A global hash-priority order gives lower destinations a
+  statistical preference without row barriers, strict row order, or a
+  left-to-right release. The current 6:00 mask's calculated rain duration is
+  3.129 seconds. This revised cadence still requires physical validation.
+  The complete normal-colored `6:00` then settles for 550 ms. An amber scanner
+  paints only the actual glyph slice at each x: it travels left-to-right at
+  40 ms/column, holds on the right for 350 ms, then returns right-to-left at
+  80 ms/column, leaving amber paint behind. The
+  evening amber is logical RGB(255,96,0). After return, the tint remains full
+  through 18:00 and blends against the current normal clock color at
+  100/80/60/40/20/0% from 18:00 through 18:05. It is presentation paint, not
+  a mutation of the configured base color. All phases are nonblocking and
+  affect time glyphs only; informational overlays remain independently
+  composed. SixPM suppresses ordinary dissolve and recenter.
 - **12:00 AM / midnight:** collapse or remove outgoing `11:59` into darkness,
   allow a brief dark/blackout moment, then reveal `12:00` at `12:00`'s final
   centered position, absorbing the observed centering change inside the

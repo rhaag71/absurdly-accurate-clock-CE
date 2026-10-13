@@ -4,6 +4,7 @@
 
 #include "clock_dissolve.hpp"
 #include "clock_recenter_slide.hpp"
+#include "clock_six_pm_effect.hpp"
 #include "compact_clock_font.hpp"
 #include "presentation_time_event.hpp"
 
@@ -30,12 +31,26 @@ class State {
 
     if (!valid) {
       const bool changed = has_text_ || dissolve_.active() ||
-                           recenter_.initialized();
+                           recenter_.initialized() || six_pm_.primaryActive() ||
+                           six_pm_.tintActive();
       clearVisualState();
       return {changed, event};
     }
 
     const bool text_changed = !has_text_ || !sameText(current_text_, text);
+
+    if (six_pm_.primaryActive()) {
+      if (text_changed || civil_hour != 18U || civil_minute != 0U) {
+        settleDirect(text, centered_x, now_us);
+        return {true, event};
+      }
+      const clock_six_pm_effect::AdvanceResult advance =
+          six_pm_.update(now_us, civil_hour, civil_minute);
+      return {advance.changed, event};
+    }
+
+    const clock_six_pm_effect::AdvanceResult tint_update =
+        six_pm_.updateTint(civil_hour, civil_minute);
 
     // A newer displayed time invalidates the old visual source material. The
     // latest valid presentation wins and settles directly; no queue is kept.
@@ -55,8 +70,21 @@ class State {
     }
 
     if (presentation_time_event::isMajorSpecial(event)) {
-      // Special choreography is reserved but not implemented yet. Its layout
+      if (event == presentation_time_event::Event::six_pm) {
+        dissolve_.reset();
+        recenter_.reset();
+        recenter_.update(true, centered_x, now_us);
+        copyText(current_text_, text);
+        has_text_ = true;
+        if (six_pm_.start(text, centered_x, now_us)) {
+          return {true, event};
+        }
+        six_pm_.reset();
+        return {true, event};
+      }
+      // SixAM, Noon, and Midnight choreography remains reserved. Their layout
       // contract is honored by settling directly at the final centered origin.
+      six_pm_.reset();
       settleDirect(text, centered_x, now_us);
       return {true, event};
     }
@@ -76,7 +104,7 @@ class State {
       has_text_ = true;
     }
     const bool position_changed = recenter_.update(true, centered_x, now_us);
-    return {text_changed || position_changed, event};
+    return {text_changed || position_changed || tint_update.changed, event};
   }
 
   void reset() {
@@ -95,15 +123,24 @@ class State {
       dissolve_.render(pixels, background, clock_color);
       return true;
     }
+    if (six_pm_.primaryActive()) {
+      six_pm_.render(pixels, background, clock_color);
+      return true;
+    }
     pixels.fill(background);
     return compact_clock_font::drawText(pixels, current_text_,
-                                        recenter_.currentX(), 0, clock_color);
+                                        recenter_.currentX(), 0,
+                                        six_pm_.tintedColor(clock_color));
   }
 
   bool hasText() const { return has_text_; }
   const char* text() const { return current_text_; }
   bool dissolveActive() const { return dissolve_.active(); }
   bool recenterActive() const { return recenter_.active(); }
+  bool sixPmActive() const { return six_pm_.primaryActive(); }
+  bool eveningTintActive() const { return six_pm_.tintActive(); }
+  uint8_t eveningAmberPercent() const { return six_pm_.amberPercent(); }
+  const clock_six_pm_effect::State& sixPmEffect() const { return six_pm_; }
   int currentX() const { return recenter_.currentX(); }
   int targetX() const { return recenter_.targetX(); }
   const clock_dissolve::State& dissolve() const { return dissolve_; }
@@ -136,6 +173,7 @@ class State {
 
   void settleDirect(const char* text, int centered_x, uint32_t now_us) {
     dissolve_.reset();
+    six_pm_.reset();
     recenter_.reset();
     recenter_.update(true, centered_x, now_us);
     copyText(current_text_, text);
@@ -144,6 +182,7 @@ class State {
 
   void clearVisualState() {
     dissolve_.reset();
+    six_pm_.reset();
     recenter_.reset();
     current_text_[0] = '\0';
     has_text_ = false;
@@ -151,6 +190,7 @@ class State {
 
   presentation_time_event::Resolver event_resolver_{};
   clock_dissolve::State dissolve_{};
+  clock_six_pm_effect::State six_pm_{};
   clock_recenter_slide::State recenter_{};
   char current_text_[kTextCapacity]{};
   bool has_text_ = false;

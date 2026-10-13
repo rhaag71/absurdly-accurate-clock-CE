@@ -106,6 +106,10 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/clock_presentation_transition_test.cpp \
     -o "$test_dir/clock_presentation_transition"
 "$test_dir/clock_presentation_transition"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/clock_six_pm_effect_test.cpp \
+    -o "$test_dir/clock_six_pm_effect"
+"$test_dir/clock_six_pm_effect"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
     src/display_time.cpp test/host/informational_overlay_test.cpp \
