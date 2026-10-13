@@ -167,7 +167,9 @@ class State {
         return {};
       case Phase::settle:
         if (elapsed >= kSettleUs) {
-          sweep_x_ = left_x_;
+          // Logical x increases toward the panel's visual right edge. The
+          // first scanner pass therefore starts on the right and walks left.
+          sweep_x_ = right_x_;
           return enter(Phase::outbound, now_us);
         }
         return {};
@@ -177,9 +179,9 @@ class State {
           return {};
         }
         last_frame_us_ = now_us;
-        if (sweep_x_ < right_x_) {
-          ++sweep_x_;
-          if (sweep_x_ == right_x_) {
+        if (sweep_x_ > left_x_) {
+          --sweep_x_;
+          if (sweep_x_ == left_x_) {
             phase_ = Phase::right_hold;
             phase_started_us_ = now_us;
             last_frame_us_ = now_us;
@@ -196,9 +198,9 @@ class State {
           return {};
         }
         last_frame_us_ = now_us;
-        if (sweep_x_ > left_x_) {
-          --sweep_x_;
-          if (sweep_x_ == left_x_) {
+        if (sweep_x_ < right_x_) {
+          ++sweep_x_;
+          if (sweep_x_ == right_x_) {
             phase_ = Phase::idle;
             tint_active_ = true;
             tint_minute_ = 0U;
@@ -262,7 +264,7 @@ class State {
         for (uint8_t x = 0; x < ws2812_display::logical_width; ++x) {
           if (!final_mask_.contains(x, y)) continue;
           const ws2812_display::Rgb color =
-              x >= sweep_x_ ? kEveningAmber : normal_color;
+              x <= sweep_x_ ? kEveningAmber : normal_color;
           pixels.setLogical(x, y, color);
         }
       }

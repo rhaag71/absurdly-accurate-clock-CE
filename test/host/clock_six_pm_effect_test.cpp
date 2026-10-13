@@ -344,7 +344,7 @@ void enterOutbound(clock_six_pm_effect::State& effect, uint32_t& now) {
   ++now;
   assert(effect.update(now, 18, 0).changed);
   assert(effect.phase() == Phase::outbound);
-  assert(effect.sweepX() == left && right >= left);
+  assert(effect.sweepX() == right && right > left);
 }
 
 void testSettleAndScanner() {
@@ -358,36 +358,36 @@ void testSettleAndScanner() {
   const auto mask = effect.finalMask();
   Pixels frame;
 
-  // The fast outbound pass explicitly starts at the physical leftmost glyph
-  // x and advances one logical column at a time toward the right edge. It
-  // paints only the exact
-  // vertical glyph slice there. The rest of that panel column stays dark.
+  // On this top-left-origin mapping, increasing logical x moves visually
+  // right. The fast pass therefore starts at visual right and decrements x.
+  // Only the exact glyph slice is amber; the rest of each panel column stays
+  // untouched.
   effect.render(frame, kBlack, kNormal);
   for (uint8_t y = 0; y < ws2812_display::logical_height; ++y) {
     for (uint8_t x = 0; x < ws2812_display::logical_width; ++x) {
       const Rgb expected = !mask.contains(x, y)
                                ? kBlack
-                               : x == left ? clock_six_pm_effect::kEveningAmber
-                                           : kNormal;
+                               : x == right ? clock_six_pm_effect::kEveningAmber
+                                            : kNormal;
       assert(same(logicalPixel(frame, x, y), expected));
     }
   }
-  uint8_t glyph_pixels_in_left_column = 0U;
+  uint8_t glyph_pixels_in_right_column = 0U;
   for (uint8_t y = 0; y < ws2812_display::logical_height; ++y)
-    if (mask.contains(static_cast<uint8_t>(left), y))
-      ++glyph_pixels_in_left_column;
-  assert(glyph_pixels_in_left_column < ws2812_display::logical_height);
+    if (mask.contains(static_cast<uint8_t>(right), y))
+      ++glyph_pixels_in_right_column;
+  assert(glyph_pixels_in_right_column < ws2812_display::logical_height);
   assert(clock_six_pm_effect::kOutboundColumnIntervalUs == 40000U);
 
-  // Advance once per 40 ms; columns behind the outbound scanner return to the
-  // normal color and no amber trail remains.
-  while (effect.phase() == Phase::outbound && effect.sweepX() < right) {
+  // Advance once per 40 ms while visually moving right-to-left. Previously
+  // visited slices return to normal, leaving no amber trail.
+  while (effect.phase() == Phase::outbound && effect.sweepX() > left) {
     const int prior_x = effect.sweepX();
     now += clock_six_pm_effect::kOutboundColumnIntervalUs - 1U;
     assert(!effect.update(now, 18, 0).changed);
     ++now;
     assert(effect.update(now, 18, 0).changed);
-    assert(effect.sweepX() == prior_x + 1);
+    assert(effect.sweepX() == prior_x - 1);
     effect.render(frame, kBlack, kNormal);
     for (uint8_t y = 0; y < ws2812_display::logical_height; ++y) {
       for (uint8_t x = 0; x < ws2812_display::logical_width; ++x) {
@@ -399,14 +399,14 @@ void testSettleAndScanner() {
       }
     }
   }
-  assert(effect.phase() == Phase::right_hold && effect.sweepX() == right);
+  assert(effect.phase() == Phase::right_hold && effect.sweepX() == left);
   assert(clock_six_pm_effect::kRightHoldUs == 350000U);
   effect.render(frame, kBlack, kNormal);
   for (uint8_t y = 0; y < ws2812_display::logical_height; ++y) {
     for (uint8_t x = 0; x < ws2812_display::logical_width; ++x) {
       if (mask.contains(x, y)) {
         assert(same(logicalPixel(frame, x, y),
-                    x == right ? clock_six_pm_effect::kEveningAmber : kNormal));
+                    x == left ? clock_six_pm_effect::kEveningAmber : kNormal));
       }
     }
   }
@@ -414,11 +414,11 @@ void testSettleAndScanner() {
   assert(!effect.update(now, 18, 0).changed);
   ++now;
   assert(effect.update(now, 18, 0).changed);
-  assert(effect.phase() == Phase::returning && effect.sweepX() == right);
+  assert(effect.phase() == Phase::returning && effect.sweepX() == left);
 
-  // The slow painting pass begins at the physical right edge, moves left at
-  // 80 ms per x, and paints glyph slices only. Pixels to the right remain
-  // amber while pixels to the left remain normal.
+  // The slow painting pass begins at the visual left edge and moves right at
+  // 80 ms per x. Passed left-side slices stay amber; unvisited right-side
+  // slices remain normal.
   assert(clock_six_pm_effect::kReturnColumnIntervalUs == 80000U);
   while (effect.phase() == Phase::returning) {
     const int prior_x = effect.sweepX();
@@ -427,12 +427,12 @@ void testSettleAndScanner() {
     ++now;
     assert(effect.update(now, 18, 0).changed);
     if (effect.phase() == Phase::idle) break;
-    assert(effect.sweepX() == prior_x - 1);
+    assert(effect.sweepX() == prior_x + 1);
     effect.render(frame, kBlack, kNormal);
     for (uint8_t y = 0; y < ws2812_display::logical_height; ++y) {
       for (uint8_t x = 0; x < ws2812_display::logical_width; ++x) {
         if (mask.contains(x, y)) {
-          const Rgb expected = x >= effect.sweepX()
+          const Rgb expected = x <= effect.sweepX()
                                    ? clock_six_pm_effect::kEveningAmber
                                    : kNormal;
           assert(same(logicalPixel(frame, x, y), expected));
@@ -443,7 +443,7 @@ void testSettleAndScanner() {
     }
   }
   assert(effect.tintActive() && effect.amberPercent() == 100U);
-  assert(effect.sweepX() == left);
+  assert(effect.sweepX() == right);
 }
 
 void completePrimary(State& transition, uint32_t& now) {

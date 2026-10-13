@@ -749,9 +749,10 @@ changed, then settle.
   left-to-right release. The current 6:00 mask's calculated rain duration is
   3.129 seconds. This revised cadence still requires physical validation.
   The complete normal-colored `6:00` then settles for 550 ms. An amber scanner
-  paints only the actual glyph slice at each x: it travels left-to-right at
-  40 ms/column, holds on the right for 350 ms, then returns right-to-left at
-  80 ms/column, leaving amber paint behind. The
+  paints only the actual glyph slice at each x: it travels visually
+  right-to-left at 40 ms/column, holds at the visual left edge for 350 ms,
+  then returns visually left-to-right at 80 ms/column, leaving amber paint
+  behind. The
   evening amber is logical RGB(255,96,0). After return, the tint remains full
   through 18:00 and blends against the current normal clock color at
   100/80/60/40/20/0% from 18:00 through 18:05. It is presentation paint, not
