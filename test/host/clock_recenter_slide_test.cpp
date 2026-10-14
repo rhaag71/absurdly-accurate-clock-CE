@@ -34,7 +34,7 @@ int main() {
     using clock_recenter_slide::State;
     using clock_recenter_slide::step_interval_us;
     const Rgb black{0, 0, 0};
-    const Rgb white{255, 240, 220};
+    const Rgb white{255, 255, 220};
     Pixels actual, expected, obsolete;
 
     // Initial valid content has no arbitrary startup origin.

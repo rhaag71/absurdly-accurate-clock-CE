@@ -16,7 +16,7 @@ using presentation_time_event::Event;
 using ws2812_display::Pixels;
 
 constexpr Rgb black{0, 0, 0};
-constexpr Rgb white{255, 240, 220};
+constexpr Rgb white{255, 255, 220};
 
 int centeredX(const char* text) {
   return (ws2812_display::logical_width - compact_clock_font::textWidth(text)) /

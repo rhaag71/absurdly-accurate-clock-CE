@@ -76,12 +76,17 @@ void Driver::begin(const presentation::State&) {
     transfer_refresh_.reset();
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     temporal_dither_.reset();
-    temporal_dither_schedule_.stop();
+    temporalDitherRefreshSchedule().stop();
     active_dither_mode_ = TemporalDitherMode::off;
     effect_dither_requested_ = false;
     proof_mode_refresh_.reset();
     test_pattern_refresh_.reset();
     last_frame_was_pattern_ = false;
+#else
+    temporal_dither_.reset();
+    effect_dither_schedule_.stop();
+    active_dither_mode_ = TemporalDitherMode::off;
+    effect_dither_requested_ = false;
 #endif
     overlay_frame_initialized_ = false;
     holdover_was_active_ = false;
@@ -149,13 +154,28 @@ void Driver::updateFrame(const presentation::State& state, bool force_refresh,
 void Driver::service(const presentation::State& state) {
     if (!initialized_) return;
 
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    TemporalDitherRefreshSchedule& dither_schedule =
+        temporalDitherRefreshSchedule();
+#else
+    TemporalDitherRefreshSchedule& dither_schedule = effect_dither_schedule_;
+#endif
+
     // Neither compositor nor frame preparation can run until the DMA stream,
     // last FIFO/OSR word, and reset-low interval have all completed.
     if (wire_frame_.busy()) {
         const bool dma_busy = dma_channel_is_busy(dma_channel_);
         // Timestamp after observing DMA completion, so a preempting interrupt
         // cannot shorten the conservative FIFO-drain/reset interval.
-        if (!wire_frame_.poll(micros(), dma_busy)) return;
+        const uint32_t poll_now_us = micros();
+        if (!wire_frame_.poll(poll_now_us, dma_busy)) {
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+            if (active_dither_mode_ != TemporalDitherMode::off)
+                temporalDitherRefreshSchedule().observeOutputBusy(
+                    poll_now_us, dma_busy);
+#endif
+            return;
+        }
     }
 
     const bool brightness_changed = brightness_refresh_.consumeChange();
@@ -210,15 +230,25 @@ void Driver::service(const presentation::State& state) {
 
     updateFrame(state, force_refresh, overlay);
     informational_overlay::isolateLevelProof(pixels_, overlay);
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     const bool effect_dither_requested =
         clock_transition_.effectDitherRequested();
     const bool effect_request_changed =
         effect_dither_requested != effect_dither_requested_;
     effect_dither_requested_ = effect_dither_requested;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    if (effect_request_changed && !dither_schedule.hasUserRateSelection()) {
+        const uint16_t policy_rate = effect_dither_requested
+            ? effect_temporal_dither_rate_hz
+            : temporal_dither_default_rate_hz;
+        dither_schedule.setRateHzForEffect(policy_rate, micros());
+    }
     const TemporalDitherMode requested_dither_mode =
         resolveTemporalDitherMode(effect_dither_requested,
                                   temporalDitherMode());
+#else
+    const TemporalDitherMode requested_dither_mode =
+        resolveProductionEffectDitherMode(effect_dither_requested);
+#endif
     const bool dither_mode_changed = requested_dither_mode != active_dither_mode_;
     if (dither_mode_changed || effect_request_changed) {
         // Reset on both edges so a temporary effect cannot inherit or leave
@@ -226,17 +256,23 @@ void Driver::service(const presentation::State& state) {
         temporal_dither_.reset();
         active_dither_mode_ = requested_dither_mode;
         if (active_dither_mode_ == TemporalDitherMode::off)
-            temporal_dither_schedule_.stop();
-        else
-            temporal_dither_schedule_.reset(state.now_us);
+            dither_schedule.stop();
+        else {
+#if !defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+            // Production effects have one fixed, physically selected target;
+            // development rate controls remain diagnostic-only.
+            dither_schedule.setRateHzForEffect(
+                effect_temporal_dither_rate_hz, micros());
+#endif
+            dither_schedule.reset(micros());
+        }
         frame_dirty_ = true;
     }
     if (brightness_changed || color_changed) temporal_dither_.reset();
     const bool dither_enabled = active_dither_mode_ != TemporalDitherMode::off;
     const bool dither_refresh_due = dither_enabled &&
-        temporal_dither_schedule_.due(state.now_us);
+        dither_schedule.due(micros());
     if (dither_refresh_due) frame_dirty_ = true;
-#endif
 
     if (frame_dirty_) {
         uint8_t output_brightness = brightness();
@@ -252,16 +288,11 @@ void Driver::service(const presentation::State& state) {
         // already in device-code units, so it is not crushed by brightness 2
         // or brightened by development comparison curves. Other pixels retain
         // their existing brightness/transfer path exactly.
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
         const bool prepared = dither_enabled
             ? wire_frame_.prepareDithered(pixels_, output_brightness, transfer,
                                           temporal_dither_,
                                           active_dither_mode_)
             : wire_frame_.prepare(pixels_, output_brightness, transfer);
-#else
-        const bool prepared =
-            wire_frame_.prepare(pixels_, output_brightness, transfer);
-#endif
         if (!prepared) return;
         if (overlay.level_proof >= 0 || (clock_frame && overlay.holdover))
             wire_frame_.paintOutputPixel(31, 3,
@@ -274,8 +305,15 @@ void Driver::service(const presentation::State& state) {
         channel_config_set_dreq(&dma_config, pio_get_dreq(pio0, pio_sm_, true));
         channel_config_set_high_priority(&dma_config, true);
         __dmb(); // Publish all prepared SRAM words before enabling the DMA reader.
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        const uint32_t frame_start_us = micros();
+#endif
         dma_channel_configure(dma_channel_, &dma_config, &pio0->txf[pio_sm_],
                               wire_frame_.words(), pixel_count, true);
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        if (dither_enabled)
+            dither_schedule.recordFrameStart(frame_start_us);
+#endif
         frame_dirty_ = false;
     }
 }

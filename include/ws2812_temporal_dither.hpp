@@ -8,9 +8,19 @@
 
 namespace ws2812_display {
 
-constexpr uint32_t temporal_dither_period_us = 10000U;
+// Development's manual A/B mode keeps its prior 100 Hz default. Effect-owned
+// rendering uses the separately selected fixed production target below.
+constexpr uint16_t temporal_dither_default_rate_hz = 100U;
+constexpr uint16_t effect_temporal_dither_rate_hz = 110U;
+constexpr uint16_t temporal_dither_min_rate_hz = 50U;
+// 110 Hz leaves only about 140 us beyond the calculated 8.95 ms complete
+// wire/latch lifecycle. It is intentionally limited to short active effects.
+constexpr uint16_t temporal_dither_max_rate_hz = 110U;
+constexpr uint32_t temporal_dither_period_us =
+    1000000U / temporal_dither_default_rate_hz;
 constexpr uint32_t temporal_dither_target_hz =
-    1000000U / temporal_dither_period_us;
+    temporal_dither_default_rate_hz;
+constexpr uint8_t temporal_dither_statistics_window = 100U;
 
 enum class TemporalDitherMode : uint8_t { off, basic, perceptual };
 constexpr uint8_t perceptual_deadband_remainder = 8U;
@@ -18,6 +28,12 @@ constexpr uint8_t perceptual_deadband_remainder = 8U;
 inline TemporalDitherMode resolveTemporalDitherMode(
     bool effect_requests_perceptual, TemporalDitherMode user_mode) {
   return effect_requests_perceptual ? TemporalDitherMode::perceptual : user_mode;
+}
+
+constexpr TemporalDitherMode resolveProductionEffectDitherMode(
+    bool effect_requests_perceptual) {
+  return effect_requests_perceptual ? TemporalDitherMode::perceptual
+                                    : TemporalDitherMode::off;
 }
 
 // Per-channel remainder carry restores fractional brightness across frames.
@@ -124,24 +140,247 @@ class TemporalDitherRefreshSchedule {
   void reset(uint32_t now_us) {
     last_refresh_us_ = now_us;
     active_ = true;
+    pending_ = false;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    has_last_frame_start_ = false;
+#endif
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    resetStatistics();
+#endif
   }
 
   void stop() { active_ = false; }
 
-  bool due(uint32_t now_us) {
-    if (!active_) return false;
-    const uint32_t elapsed = now_us - last_refresh_us_;
-    if (elapsed < temporal_dither_period_us) return false;
-    // Skip missed intervals: a delayed service sends one current frame only.
-    last_refresh_us_ +=
-        elapsed / temporal_dither_period_us * temporal_dither_period_us;
+  bool setRateHz(uint16_t rate_hz, uint32_t now_us) {
+    if (!setRateHzInternal(rate_hz, now_us)) return false;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    user_rate_selected_ = true;
+#endif
     return true;
   }
 
+  // Effect policy may temporarily select 110 Hz without changing the
+  // development console's independent A/B rate preference.
+  bool setRateHzForEffect(uint16_t rate_hz, uint32_t now_us) {
+    return setRateHzInternal(rate_hz, now_us);
+  }
+
+  bool hasUserRateSelection() const {
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    return user_rate_selected_;
+#else
+    return false;
+#endif
+  }
+
  private:
+  bool setRateHzInternal(uint16_t rate_hz, uint32_t now_us) {
+    if (!validRateHz(rate_hz)) return false;
+    rate_hz_ = rate_hz;
+    period_us_ = 1000000U / rate_hz;
+    if (active_) {
+      last_refresh_us_ = now_us;
+      pending_ = false;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+      has_last_frame_start_ = false;
+#endif
+    }
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    resetStatistics();
+#endif
+    return true;
+  }
+
+ public:
+
+  static bool validRateHz(uint16_t rate_hz) {
+    return rate_hz >= temporal_dither_min_rate_hz &&
+           rate_hz <= temporal_dither_max_rate_hz;
+  }
+
+  uint16_t rateHz() const { return rate_hz_; }
+  uint32_t periodUs() const { return period_us_; }
+
+  bool due(uint32_t now_us) {
+    if (!active_) return false;
+    if (pending_) {
+      const uint32_t additional = (now_us - last_refresh_us_) / period_us_;
+      if (additional != 0U) {
+        // The previous pending frame is obsolete; keep only the newest due
+        // frame and account for skipped opportunities without catch-up.
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        addSaturated(missed_intervals_, additional);
+#endif
+        last_refresh_us_ += additional * period_us_;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        eligible_at_us_ = last_refresh_us_;
+#endif
+      }
+      return true;
+    }
+    const uint32_t elapsed = now_us - last_refresh_us_;
+    if (elapsed < period_us_) return false;
+    const uint32_t intervals = elapsed / period_us_;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    if (intervals > 1U) addSaturated(missed_intervals_, intervals - 1U);
+#endif
+    // Stay on the original interval grid and send one current frame only.
+    last_refresh_us_ += intervals * period_us_;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    eligible_at_us_ = last_refresh_us_;
+#endif
+    pending_ = true;
+    return true;
+  }
+
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  // Called while a frame still owns the DMA/PIO stream. Each elapsed slot is
+  // counted once; the newest remains pending for launch after release.
+  void observeOutputBusy(uint32_t now_us, bool dma_busy) {
+    if (!active_) return;
+    const uint32_t intervals = (now_us - last_refresh_us_) / period_us_;
+    if (intervals == 0U) return;
+    addSaturated(output_busy_conflicts_, intervals);
+    if (dma_busy) addSaturated(dma_busy_conflicts_, intervals);
+    addSaturated(missed_intervals_, pending_ ? intervals : intervals - 1U);
+    last_refresh_us_ += intervals * period_us_;
+    eligible_at_us_ = last_refresh_us_;
+    pending_ = true;
+  }
+
+  void recordFrameStart(uint32_t start_us) {
+    if (has_last_frame_start_) recordInterval(start_us - last_frame_start_us_);
+    last_frame_start_us_ = start_us;
+    has_last_frame_start_ = true;
+    if (pending_) {
+      recordLatency(start_us - eligible_at_us_);
+      pending_ = false;
+    }
+    addSaturated(frames_started_, 1U);
+  }
+
+  struct Statistics {
+    uint16_t rate_hz = temporal_dither_default_rate_hz;
+    uint32_t interval_us = 1000000U / temporal_dither_default_rate_hz;
+    uint8_t interval_samples = 0U;
+    uint32_t interval_min_us = 0U;
+    uint32_t interval_average_us = 0U;
+    uint32_t interval_max_us = 0U;
+    uint8_t latency_samples = 0U;
+    uint32_t latency_average_us = 0U;
+    uint32_t latency_max_us = 0U;
+    uint32_t frames_started = 0U;
+    uint32_t missed_intervals = 0U;
+    uint32_t dma_busy_conflicts = 0U;
+    uint32_t output_busy_conflicts = 0U;
+  };
+
+  // Reporting consumes a bounded measurement window so each console query
+  // describes the frames since the previous query rather than stale history.
+  Statistics takeStatistics() {
+    Statistics result;
+    result.rate_hz = rate_hz_;
+    result.interval_us = period_us_;
+    result.interval_samples = interval_samples_;
+    result.interval_min_us = interval_samples_ == 0U ? 0U : interval_min_us_;
+    result.interval_average_us = interval_average_us_;
+    result.interval_max_us = interval_max_us_;
+    result.latency_samples = latency_samples_;
+    result.latency_average_us = latency_average_us_;
+    result.latency_max_us = latency_max_us_;
+    result.frames_started = frames_started_;
+    result.missed_intervals = missed_intervals_;
+    result.dma_busy_conflicts = dma_busy_conflicts_;
+    result.output_busy_conflicts = output_busy_conflicts_;
+    resetStatistics();
+    return result;
+  }
+#endif
+
+ private:
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  static void addSaturated(uint32_t& value, uint32_t add) {
+    value = UINT32_MAX - value < add ? UINT32_MAX : value + add;
+  }
+
+  void recordInterval(uint32_t value) {
+    if (interval_samples_ >= temporal_dither_statistics_window) return;
+    if (interval_samples_ == 0U || value < interval_min_us_)
+      interval_min_us_ = value;
+    if (interval_samples_ == 0U || value > interval_max_us_)
+      interval_max_us_ = value;
+    ++interval_samples_;
+    const int32_t error = static_cast<int32_t>(value) -
+                          static_cast<int32_t>(interval_average_us_);
+    interval_average_us_ = static_cast<uint32_t>(
+        static_cast<int32_t>(interval_average_us_) + error / interval_samples_);
+  }
+
+  void recordLatency(uint32_t value) {
+    if (latency_samples_ >= temporal_dither_statistics_window) return;
+    if (latency_samples_ == 0U || value > latency_max_us_)
+      latency_max_us_ = value;
+    ++latency_samples_;
+    const int32_t error = static_cast<int32_t>(value) -
+                          static_cast<int32_t>(latency_average_us_);
+    latency_average_us_ = static_cast<uint32_t>(
+        static_cast<int32_t>(latency_average_us_) + error / latency_samples_);
+  }
+
+  void resetStatistics() {
+    interval_samples_ = 0U;
+    interval_min_us_ = 0U;
+    interval_average_us_ = 0U;
+    interval_max_us_ = 0U;
+    latency_samples_ = 0U;
+    latency_average_us_ = 0U;
+    latency_max_us_ = 0U;
+    frames_started_ = 0U;
+    missed_intervals_ = 0U;
+    dma_busy_conflicts_ = 0U;
+    output_busy_conflicts_ = 0U;
+  }
+#endif
+
   uint32_t last_refresh_us_ = 0U;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  uint32_t eligible_at_us_ = 0U;
+  uint32_t last_frame_start_us_ = 0U;
+  uint32_t interval_min_us_ = 0U;
+  uint32_t interval_average_us_ = 0U;
+  uint32_t interval_max_us_ = 0U;
+  uint32_t latency_average_us_ = 0U;
+  uint32_t latency_max_us_ = 0U;
+  uint32_t frames_started_ = 0U;
+  uint32_t missed_intervals_ = 0U;
+  uint32_t dma_busy_conflicts_ = 0U;
+  uint32_t output_busy_conflicts_ = 0U;
+#endif
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  uint32_t period_us_ = temporal_dither_period_us;
+  uint16_t rate_hz_ = temporal_dither_default_rate_hz;
+#else
+  uint32_t period_us_ = 1000000U / effect_temporal_dither_rate_hz;
+  uint16_t rate_hz_ = effect_temporal_dither_rate_hz;
+#endif
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  uint8_t interval_samples_ = 0U;
+  uint8_t latency_samples_ = 0U;
+#endif
   bool active_ = false;
+  bool pending_ = false;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+  bool has_last_frame_start_ = false;
+  bool user_rate_selected_ = false;
+#endif
 };
+
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+inline TemporalDitherRefreshSchedule& temporalDitherRefreshSchedule() {
+  static TemporalDitherRefreshSchedule schedule;
+  return schedule;
+}
+#endif
 
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 inline TemporalDitherMode& temporalDitherModeStorage() {

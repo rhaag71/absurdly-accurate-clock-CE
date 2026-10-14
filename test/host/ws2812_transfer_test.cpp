@@ -179,21 +179,21 @@ int main() {
     assert(!logicalToRaw(logical_width, 0, raw));
     assert(timebase.state().utc_valid == utc_valid_before);
     Pixels proof;
-    const Rgb default_soft_white = display_appearance::default_clock_color;
+    const Rgb default_clock_white = display_appearance::default_clock_color;
     assert(display_compositor::composeClock(proof, "8:05", logical_width, 0,
                         proofBackground(ProofMode::normal),
                         display_compositor::solid(
-                            proofClockColor(ProofMode::normal, default_soft_white))));
+                            proofClockColor(ProofMode::normal, default_clock_white))));
     assert(proof.at(0).red == 0 && proof.at(0).green == 0 && proof.at(0).blue == 0);
-    assert(proofClockColor(ProofMode::amber, default_soft_white).green == 96);
+    assert(proofClockColor(ProofMode::amber, default_clock_white).green == 96);
     assert(proofBrightness(ProofMode::amber, 2) == 6);
     assert(proofBackground(ProofMode::inverted).red == 255);
-    assert(proofClockColor(ProofMode::inverted, default_soft_white).red == 0);
+    assert(proofClockColor(ProofMode::inverted, default_clock_white).red == 0);
     assert(display_compositor::composeClock(proof, "8:05", logical_width, 0,
                         proofBackground(ProofMode::background),
                         display_compositor::solid(
                             proofClockColor(ProofMode::background,
-                                            default_soft_white))));
+                                            default_clock_white))));
     assert(proof.at(0).red == 0 && proof.at(0).green == 0 && proof.at(0).blue == 255);
     renderTestPattern(ramp, TestPattern::amber);
     assert(ramp.at(0).red == 255 && ramp.at(0).green == 96 && ramp.at(0).blue == 0);

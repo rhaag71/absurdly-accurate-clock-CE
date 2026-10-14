@@ -69,6 +69,21 @@ bool parseRamp(const char* text, ws2812_display::TestPattern& pattern) {
     return true;
 }
 
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+bool parseDitherRate(const char* text, uint16_t& rate_hz) {
+    if (!*text) return false;
+    uint32_t value = 0U;
+    for (const char* cursor = text; *cursor; ++cursor) {
+        if (!digit(*cursor)) return false;
+        const uint32_t digit_value = static_cast<uint32_t>(*cursor - '0');
+        if (value > (65535U - digit_value) / 10U) return false;
+        value = value * 10U + digit_value;
+    }
+    rate_hz = static_cast<uint16_t>(value);
+    return true;
+}
+#endif
+
 bool parseProofMode(const char* text, ws2812_display::ProofMode& mode) {
     using ws2812_display::ProofMode;
     if (std::strcmp(text, "norm") == 0) mode = ProofMode::normal;
@@ -275,7 +290,7 @@ void Console::execute(CommandHandler handler, void* context) {
             write("           g {off|g2|ws}\r\n");
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
             write("dither     Show/set temporal output dithering (default off)\r\n");
-            writeLine("           dither {off|basic|perceptual}");
+            writeLine("           dither {off|basic|perceptual}; dither rate <Hz 50-110>");
 #endif
             write("pat        Show/select full-panel test color; pat off restores clock\r\n");
             write("           pat {amber|r|g|b|w|c|m|off}\r\n");
@@ -348,6 +363,17 @@ void Console::execute(CommandHandler handler, void* context) {
             if (!*args && !*second) {
                 if (handler) handler(context, Command::temporal_dither_status,
                                      0, *this);
+            } else if (std::strcmp(args, "rate") == 0 && !*second) {
+                if (handler) handler(context,
+                                     Command::temporal_dither_rate_status,
+                                     0, *this);
+            } else if (std::strcmp(args, "rate") == 0 && *second) {
+                uint16_t rate_hz = 0U;
+                if (parseDitherRate(second, rate_hz) && handler)
+                    handler(context, Command::temporal_dither_rate_set,
+                            rate_hz, *this);
+                else
+                    writeLine("Usage: dither rate <50-110>");
             } else if (*args && !*second && handler) {
                 if (std::strcmp(args, "off") == 0)
                     handler(context, Command::temporal_dither_set, 0, *this);
@@ -357,9 +383,9 @@ void Console::execute(CommandHandler handler, void* context) {
                 else if (std::strcmp(args, "perceptual") == 0)
                     handler(context, Command::temporal_dither_set, 2, *this);
                 else
-                    writeLine("Usage: dither {off|basic|perceptual}");
+                    writeLine("Usage: dither {off|basic|perceptual} | dither rate <50-110>");
             } else {
-                writeLine("Usage: dither {off|basic|perceptual}");
+                writeLine("Usage: dither {off|basic|perceptual} | dither rate <50-110>");
             }
 #endif
         } else if (std::strcmp(begin, "pat") == 0) {

@@ -21,14 +21,14 @@ int main() {
     using ws2812_display::Pixels;
 
     const Rgb black{0, 0, 0};
-    const Rgb soft_white{255, 240, 220};
+    const Rgb normal_white{255, 255, 220};
     const Rgb amber{255, 96, 0};
     Pixels actual, expected;
 
     // Normal composition keeps the approved centered glyph geometry intact.
-    assert(composeClock(actual, "8:05", 32, 0, black, solid(soft_white)));
+    assert(composeClock(actual, "8:05", 32, 0, black, solid(normal_white)));
     expected.fill(black);
-    assert(compact_clock_font::drawCenteredText(expected, "8:05", 32, 0, soft_white));
+    assert(compact_clock_font::drawCenteredText(expected, "8:05", 32, 0, normal_white));
     assert(samePixels(actual, expected));
 
     // Amber changes only paint; mask placement and spacing stay the same.
@@ -38,8 +38,8 @@ int main() {
     assert(samePixels(actual, expected));
 
     // Inversion is an illuminated background with explicit black glyph paint.
-    assert(composeClock(actual, "8:05", 32, 0, soft_white, solid(black)));
-    expected.fill(soft_white);
+    assert(composeClock(actual, "8:05", 32, 0, normal_white, solid(black)));
+    expected.fill(normal_white);
     assert(compact_clock_font::drawCenteredText(expected, "8:05", 32, 0, black));
     assert(samePixels(actual, expected));
     bool found_dark_glyph = false;
@@ -48,8 +48,8 @@ int main() {
         const auto pixel = actual.at(i);
         if (pixel.red == 0 && pixel.green == 0 && pixel.blue == 0)
             found_dark_glyph = true;
-        if (pixel.red == soft_white.red && pixel.green == soft_white.green &&
-            pixel.blue == soft_white.blue)
+        if (pixel.red == normal_white.red && pixel.green == normal_white.green &&
+            pixel.blue == normal_white.blue)
             found_illuminated_background = true;
     }
     assert(found_dark_glyph && found_illuminated_background);
@@ -59,7 +59,7 @@ int main() {
     const auto amber_overlay = [amber](Pixels& frame) {
         return applyOverlayPixel(frame, 0, 0, solid(amber));
     };
-    assert(compose(actual, "1:11", 32, 0, black, solid(soft_white),
+    assert(compose(actual, "1:11", 32, 0, black, solid(normal_white),
                    amber_overlay));
     auto pixel = actual.at(0);
     assert(pixel.red == amber.red && pixel.green == amber.green &&
@@ -71,10 +71,10 @@ int main() {
     assert(applyOverlayPixel(actual, 0, 0, solid(black)));
     pixel = actual.at(0);
     assert(pixel.red == 0 && pixel.green == 0 && pixel.blue == 0);
-    assert(applyOverlayPixel(actual, 0, 0, solid(soft_white)));
+    assert(applyOverlayPixel(actual, 0, 0, solid(normal_white)));
     pixel = actual.at(0);
-    assert(pixel.red == soft_white.red && pixel.green == soft_white.green &&
-           pixel.blue == soft_white.blue);
+    assert(pixel.red == normal_white.red && pixel.green == normal_white.green &&
+           pixel.blue == normal_white.blue);
 
     // A fully transparent clock paint leaves the background untouched.
     beginFrame(actual, amber);

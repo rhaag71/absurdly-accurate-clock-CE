@@ -15,6 +15,9 @@
 #include "informational_overlay.hpp"
 #include "ws2812_clock_color.hpp"
 #include "ws2812_test_pattern.hpp"
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+#include "ws2812_temporal_dither.hpp"
+#endif
 #endif
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
 #include "dev_console.hpp"
@@ -224,10 +227,50 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
             ws2812_display::setTemporalDitherMode(
                 static_cast<ws2812_display::TemporalDitherMode>(utc_seconds));
         char line[72];
-        snprintf(line, sizeof(line), "WS2812 temporal dithering: %s (target %u Hz)",
+        snprintf(line, sizeof(line), "WS2812 temporal dithering: %s (requested %u Hz)",
                  ws2812_display::temporalDitherModeName(
                      ws2812_display::temporalDitherMode()),
-                 static_cast<unsigned>(ws2812_display::temporal_dither_target_hz));
+                 static_cast<unsigned>(ws2812_display::temporalDitherRefreshSchedule().rateHz()));
+        console.writeLine(line);
+    } else if (command == dev_console::Command::temporal_dither_rate_set) {
+        auto& schedule = ws2812_display::temporalDitherRefreshSchedule();
+        const uint16_t rate_hz = static_cast<uint16_t>(utc_seconds);
+        if (schedule.setRateHz(rate_hz, micros())) {
+            char line[72];
+            snprintf(line, sizeof(line), "WS2812 dither target set to %u Hz; statistics reset",
+                     static_cast<unsigned>(schedule.rateHz()));
+            console.writeLine(line);
+        } else {
+            console.writeLine("Rejected: dither rate must be 50-110 Hz (120 Hz exceeds calculated lifecycle)");
+        }
+    } else if (command == dev_console::Command::temporal_dither_rate_status) {
+        auto& schedule = ws2812_display::temporalDitherRefreshSchedule();
+        const auto stats = schedule.takeStatistics();
+        char line[128];
+        const uint32_t measured_hz_x10 = stats.interval_average_us == 0U
+            ? 0U : 10000000U / stats.interval_average_us;
+        snprintf(line, sizeof(line),
+                 "Dither target %u Hz (%lu us); measured %lu.%lu Hz from %u intervals",
+                 static_cast<unsigned>(stats.rate_hz),
+                 static_cast<unsigned long>(stats.interval_us),
+                 static_cast<unsigned long>(measured_hz_x10 / 10U),
+                 static_cast<unsigned long>(measured_hz_x10 % 10U),
+                 static_cast<unsigned>(stats.interval_samples));
+        console.writeLine(line);
+        snprintf(line, sizeof(line),
+                 "Frame interval us min/avg/max %lu/%lu/%lu; eligibility->launch avg/max %lu/%lu us",
+                 static_cast<unsigned long>(stats.interval_min_us),
+                 static_cast<unsigned long>(stats.interval_average_us),
+                 static_cast<unsigned long>(stats.interval_max_us),
+                 static_cast<unsigned long>(stats.latency_average_us),
+                 static_cast<unsigned long>(stats.latency_max_us));
+        console.writeLine(line);
+        snprintf(line, sizeof(line),
+                 "Frames %lu; skipped %lu; DMA-busy %lu; output-lease busy %lu",
+                 static_cast<unsigned long>(stats.frames_started),
+                 static_cast<unsigned long>(stats.missed_intervals),
+                 static_cast<unsigned long>(stats.dma_busy_conflicts),
+                 static_cast<unsigned long>(stats.output_busy_conflicts));
         console.writeLine(line);
     } else if (command == dev_console::Command::pattern_status ||
                command == dev_console::Command::pattern_set ||

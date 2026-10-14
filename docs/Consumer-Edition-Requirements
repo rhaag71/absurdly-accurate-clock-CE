@@ -350,7 +350,9 @@ limiter. The user previously evaluated the BTF-LIGHTING 8x32 panel through
 the black pixel grid and LCD-derived diffuser: logical RGB(255, 96,
 0) at brightness 6 produces the desired amber appearance. This is the
 reference calibration anchor and named alternate, not the everyday default.
-The everyday default is now soft white RGB(255, 240, 220) at brightness 2.
+This records the earlier soft-white selection, which has since been
+superseded: ordinary clock white is now physically approved as RGB(255, 255,
+220) at brightness 2. Ordinary/static presentation is non-dithered.
 Future gamma/transfer correction must preserve the amber anchor's perceived
 appearance unless deliberate physical re-evaluation changes it.
 The calibration is specific to this panel and optical stack and does not
@@ -359,16 +361,16 @@ centers each formatted string by its actual rendered width; see Section 5 for
 the glyph, layout, and 12-hour contract. The clock face omits the leading zero.
 
 White presentation values were physically evaluated on this panel through the
-then-installed black grid and diffuser. Neutral white RGB(255, 255, 255) at brightness 3 looked clean
-and pleasant and may be useful as a low-intensity gray-like reference, though
-it was brighter than likely desired for everyday use at that level. Soft white
-RGB(255, 240, 220) looked close to neutral, softer, clearly visible, and
-non-intrusive; brightness 2 is preferred for it, while brightness 3 also looks
-good. Soft white is now frozen as the current everyday/default presentation.
+then-installed black grid and diffuser. The earlier evaluation preferred soft
+white RGB(255, 240, 220), but that historical choice is superseded. The current
+physically approved ordinary clock white is RGB(255, 255, 220) at brightness
+2, rendered without temporal dithering. This current choice governs ordinary
+clock presentation; the older soft-white evaluation remains only as history.
 Warmer values RGB(255, 220, 180),
 RGB(255, 200, 140), and RGB(255, 180, 100) looked too green or otherwise less
 desirable on this assembly. The established amber anchor RGB(255, 96, 0) at
-brightness 6 remains unchanged and distinct from the soft-white default. These
+brightness 6 remains unchanged and distinct from the historical soft-white
+candidate. These
 appearance choices are specific to the panel and optical stack used for those
 observations. The current stack is reported as a light-gray printed grid plus
 diffuser; matching appearance through this changed stack has not been
@@ -585,8 +587,9 @@ The former fills,
 geometry walkthrough, fixed `12:34`, and raw chase are retired from normal
 runtime. Development now uses the existing simulated GPS/PPS source, normal
 timebase qualification, and presentation state to display civil `HH:MM` in
-soft white RGB(255, 240, 220) at brightness 2 by default. Amber RGB(255, 96,
-0) at brightness 6 remains the reference alternate. The physical face is
+approved warm white RGB(255, 255, 220) at brightness 2 with non-dithered
+rendering. Historical soft-white RGB(255, 240, 220) is not the default. Amber
+RGB(255, 96, 0) at brightness 6 remains the reference alternate. The physical face is
 always 12-hour.
 The user has physically verified clock mode and minute rollover; no effects
 framework is implemented. Software global brightness is implemented for WS2812 output; its
@@ -855,13 +858,21 @@ The implemented minimal logical compositor uses this order:
         -> output processing
         -> display transport
 
-The static presentation palette contains soft white RGB(255, 240, 220), white
-RGB(255, 255, 255), reference amber RGB(255, 96, 0), and red, green, blue,
-cyan, and magenta. The everyday default is soft white at brightness 2; amber
-remains the alternate/reference at brightness 6. Development WS2812 proof
-commands are `p norm`, `p amber`, `p invert`, and `p bg`. They select black
-background/soft-white clock, black background/amber clock, soft-white
-background/black glyphs, and blue background/soft-white clock respectively.
+The static presentation palette retains the historical soft-white candidate
+RGB(255, 240, 220), approved normal warm white RGB(255, 255, 220), literal full
+white RGB(255, 255, 255), reference amber RGB(255, 96, 0), and red, green,
+blue, cyan, and magenta. The ordinary/static color policy is warm white at
+brightness 2 and non-dithered.
+Perceptual temporal dithering is reserved for active SixAM/SixPM color
+animation at the production effect target of 110 Hz: SixAM requests it during
+sunrise through blue wash and sun dissolve, then releases it at settle; SixPM
+requests it during scanner/amber presentation and releases it before the
+18:01-and-later white-return tail. Basic dithering and rate controls are
+development diagnostics only. Amber remains the alternate/reference at
+brightness 6. Development WS2812
+proof commands are `p norm`, `p amber`, `p invert`, and `p bg`. They select
+black background/normal-white clock, black background/amber clock, normal-white
+background/black glyphs, and blue background/normal-white clock respectively.
 These are static proofs only. Later scenes and effects build on the same
 logical composition boundary. Transfer correction stays downstream and
 independent; production remains transfer off.

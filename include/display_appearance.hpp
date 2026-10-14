@@ -16,13 +16,18 @@ struct Rgb {
 constexpr Rgb reference_amber = {255, 96, 0};
 constexpr uint8_t reference_amber_brightness = 6;
 
-// Everyday default selected after physical evaluation through the current optics.
+// The approved ordinary clock white keeps a warm blue-channel reduction.
+constexpr Rgb normal_clock_white = {255, 255, 220};
+constexpr uint8_t normal_clock_brightness = 2;
+constexpr Rgb default_clock_color = normal_clock_white;
+constexpr uint8_t default_clock_brightness = normal_clock_brightness;
+
+// Retained as a historical palette candidate; it is not the clock default.
 constexpr Rgb soft_white = {255, 240, 220};
 constexpr uint8_t soft_white_brightness = 2;
-constexpr Rgb default_clock_color = soft_white;
-constexpr uint8_t default_clock_brightness = soft_white_brightness;
 
-// Additional physically evaluated reference/candidate, not the default.
+// Literal full white remains a distinct diagnostic/palette color, not the
+// ordinary clock default.
 constexpr Rgb neutral_white = {255, 255, 255};
 constexpr uint8_t neutral_white_brightness = 3;
 constexpr Rgb candidate_soft_white = soft_white;

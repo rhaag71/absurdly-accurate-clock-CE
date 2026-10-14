@@ -76,7 +76,7 @@ The current source still determines what is implemented.
 | Raw-index framebuffer independent of physical LED ordering | **Implemented driver storage** | A fixed 256-entry RGB buffer (768 bytes) serializes raw indices in increasing order. Logical coordinates use the physically established top-left-start vertical serpentine column mapping documented below. |
 | Development input for display testing | **Implemented specifically for CE** | `pico2-dev` supplies deterministic synthetic NMEA/PPS through the same parsers and timebase before display composition. The WS2812 clock consumes the resulting shared presentation snapshot. |
 | Time formatting and centered layout | **Actual-width centering and unpadded 12-hour formatting implemented** | Format civil time first, measure the active font's actual rendered width, then center every draw on 32 columns using `x = (32 - rendered_width) / 2` with deterministic integer placement. 12-hour presentation omits the leading zero; 24-hour presentation retains two hour digits. The selected build is currently 24-hour. See [Consumer Edition Requirements, Section 5](Consumer-Edition-Requirements#5-12--24-hour-display). |
-| Everyday clock color | **Implemented; physically selected** | Default logical color is soft white RGB(255, 240, 220) at brightness 2, selected after physical evaluation on the panel. The current light-gray grid plus diffuser is a reported optical change; exact appearance through this stack needs rechecking. Amber RGB(255, 96, 0) at brightness 6 remains a named calibration/reference alternate. Development `color <r> <g> <b>` still supports temporary 0..255 logical values. |
+| Everyday clock color | **Implemented; physically approved** | Ordinary clock white is logical RGB(255, 255, 220) at brightness 2 and uses the non-dithered renderer. Historical soft white RGB(255, 240, 220) is retained as a palette candidate, not the default. The current light-gray grid plus diffuser is a reported optical change; exact appearance through this stack needs rechecking. Amber RGB(255, 96, 0) at brightness 6 remains a named calibration/reference alternate. Development `color <r> <g> <b>` still supports temporary 0..255 logical values. |
 | Compile-time personalization and development source | **Selected design / approved requirement** | Typed compile-time profile settings and real/simulated input selection are implemented. Production personalization uses compile-time configuration. The development profile supports deterministic simulated GPS/PPS through the shared timing engine. Stage 2C.1 console controls and Stage 2C.2 receiver fault injection are implemented; acquisition/recovery demonstrations and calendar/theme scenarios remain future work. |
 | GPS lock, unsynced, and holdover states | **Selected design / approved requirement** | After fully qualified GPS/PPS is lost, local time enters a continuous 24-hour qualified HOLDOVER window. Only full normal requalification clears its timer/state. At expiry enter HOLDOVER_EXPIRED, keep displaying and counting best-effort time as unqualified, and flash the holdover pixel until full requalification. This timing state machine is not implemented; inherited firmware invalidates UTC on reference loss. |
 | Conservative brightness and current limiting | **Brightness implemented; limiter future** | WS2812 brightness is a software appearance control, range 0..255, default 2. The amber RGB(255, 96, 0) plus brightness 6 appearance remains a calibration anchor, not a current limit. No current budget or limiter is implemented or measured. The provisional system target is 5 V / 2 A and requires measured verification. |
@@ -208,13 +208,12 @@ marker and leaves (31,7) available. The former
 fills, geometry scans,
 fixed text hold, and raw chase are retired from normal runtime. Development
 renders local civil `HH:MM` from
-`presentation::State`, using fixed 12-hour civil formatting and the everyday
-soft-white RGB `(255, 240, 220)` at brightness 2. Earlier physical evaluation
-through the BTF-LIGHTING 8x32 panel's black grid and LCD-derived diffuser
-selected this as the strongest everyday presentation; brightness 3
-also looked good. Neutral white RGB(255, 255, 255) at brightness 3 looked clean
-and pleasant and remains a useful low-intensity gray-like reference, though it
-seemed brighter than desired for everyday use. Tested warmer values RGB(255,
+`presentation::State`, using fixed 12-hour civil formatting and approved
+ordinary clock warm white RGB(255, 255, 220) at brightness 2. An earlier physical evaluation
+preferred soft white RGB(255, 240, 220) through the BTF-LIGHTING 8x32 panel's
+then-installed black grid and LCD-derived diffuser; that preference is
+superseded by the current physical decision approving warm white. Tested
+warmer values RGB(255,
 220, 180), RGB(255, 200, 140), and RGB(255, 180, 100) looked too green or
 otherwise less desirable. These judgments are specific to the optical stack
 used for those observations. The current light-gray printed grid plus diffuser
@@ -266,9 +265,9 @@ intensity, then share the same global output stages. Clock glyphs are masks
 painted with logical RGB; black/off explicitly writes zero RGB and differs
 from transparent/no-op. The fixed-size logical compositor implements
 background, glyph-mask paint, then optional overlay paint; static development
-proofs are `p norm`, `p amber`, `p invert`, and `p bg`. The normal everyday
-default is soft white RGB(255, 240, 220) at brightness 2, and amber remains the
-named reference alternate. See [Consumer Edition Requirements, Section 8](Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects)
+proofs are `p norm`, `p amber`, `p invert`, and `p bg`. The approved
+ordinary/static color policy is warm white RGB(255, 255, 220) at brightness 2
+without temporal dithering. Amber remains the named reference alternate. See [Consumer Edition Requirements, Section 8](Consumer-Edition-Requirements#8-matrix-status-pixels-and-visual-effects)
 for the palette and composition contract.
 
 When reducing a pixel's intended/perceived intensity, apply local intensity
@@ -467,6 +466,50 @@ ends. There is no DMA interrupt, blocking wait, delay, or timing-engine change.
 The former divider 15 at 150 MHz actually yielded 1 Mbit/s; it now derives an
 8 MHz PIO clock (divider 18.75 at 150 MHz) for the intended 800 kbit/s,
 retaining the 3/7 and 6/4 high/low cycle ratios. Waveform verification is pending.
+
+The physically established WS2812 rendering policy is effect-owned:
+ordinary/static clock presentation uses the normal non-dithered path, while
+active color animation requests perceptual temporal dithering at 110 Hz. This
+rate was visibly better than 100/105 Hz on the panel; measured sustained output
+was approximately 109 Hz. The calculated wire/tail/latch lifecycle is 8.95 ms,
+leaving about 140 us at the requested 9.09 ms period. Busy/lease observations
+rise at this rate, so use remains intentionally limited to short-lived effects;
+the scheduler prevents overlapping output ownership and collapses missed
+slots instead of catching up. No transport optimization or padding reduction
+was made.
+
+Ordinary/static rendering is non-dithered. Active color animation may request
+perceptual dithering at the production effect target of 110 Hz; Basic dithering
+is development/A-B diagnostic only. SixAM requests perceptual dithering from
+the beginning of sunrise through the blue wash and sun dissolve; it releases
+the request when the primary animation settles. Its settled blue glyph and
+minute-stepped 06:01–06:04 tint tail are non-dithered, and 06:05 returns to
+ordinary RGB(255, 255, 220) warm white through the non-dithered renderer. SixPM requests
+it only during the glyph-column scanner/amber paint and the completed 18:00
+amber hold. White clear/rain/settle and the amber-to-white tail from 18:01 are
+non-dithered. Both policies reset residual state at request edges. Effects
+request only Normal or PerceptualDither; Basic is never used by production
+effect code.
+
+Development builds retain `dither off|basic|perceptual`, `dither rate`, and
+bounded refresh telemetry for A/B diagnostics. The console mode remains
+independent: an effect temporarily overrides it with perceptual mode, then the
+selected diagnostic mode resumes after the effect request ends. An unmodified
+effect uses 110 Hz; a manually selected development rate is honored temporarily
+for A/B testing. Ordinary development dithering retains its prior 100 Hz
+default and the rate control accepts 50–110 Hz; 120 Hz is rejected because its
+8.33 ms period is shorter than the calculated lifecycle. Telemetry reports
+start-to-start and eligibility-to-launch statistics, skipped slots, and observed output/DMA busy
+conflicts over a bounded sample window. The scheduler remains completion-gated;
+the immutable DMA stream is not altered while leased. Production builds retain
+only the bounded effect scheduler and dither accumulator in the selected
+WS2812 driver; statistics and console controls are development-only.
+
+There is currently no PlatformIO environment combining the production
+profile with `AAC_DISPLAY_WS2812`: `pico2` is production without that backend,
+while `pico2-dev-ws2812` is development. The driver path is composed to support
+production effect requests when WS2812 is selected, but a production WS2812
+firmware profile/build is not currently available for verification.
 
 No actual holdover timing state exists, so production keeps this pixel off.
 `h on` can run indefinitely as a presentation proof; `h off` returns to the

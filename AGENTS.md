@@ -122,8 +122,10 @@ physical verification.
   RGB(255, 96, 0) at global brightness 6 on the BTF-LIGHTING 8x32 panel through
   the previously evaluated black grid and LCD-derived diffuser. The current
   optical stack is reported as a light-gray printed grid plus diffuser, so its
-  perceived amber match needs rechecking. The everyday default is
-  soft white RGB(255, 240, 220) at brightness 2; amber remains an alternate
+  perceived amber match needs rechecking. Ordinary clock white is the
+  physically approved RGB(255, 255, 220) at brightness 2 and uses the
+  non-dithered renderer. RGB(255, 240, 220) is a historical soft-white
+  candidate, not the default; amber remains an alternate
   reference at brightness 6. Future gamma/transfer
   correction must preserve that perceived appearance unless physically
   re-evaluated. Brightness remains an appearance control, not a current limit.
@@ -150,8 +152,10 @@ physical verification.
   amber reference; its previously observed appearance was through the BTF 8x32
   panel's black grid and LCD-derived diffuser. The current light-gray printed
   grid and diffuser have not been re-evaluated against that appearance. The
-  everyday default is soft white RGB(255, 240, 220)
-  at brightness 2; amber at brightness 6 remains the named reference alternate.
+  ordinary/static clock rendering uses approved warm white RGB(255, 255, 220) at
+  brightness 2 without dithering. RGB(255, 240, 220) is a historical
+  soft-white candidate, not the default; amber at brightness 6 remains the
+  named reference alternate.
   Keep palette values as logical RGB, independent of transfer selection. See
   the engineering baseline for comparison formulas and plan.
 - For Dad's current WS2812 8x32 build, map local day-of-month 1..31 to

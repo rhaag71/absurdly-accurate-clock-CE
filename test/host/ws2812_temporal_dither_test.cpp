@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #include "dev_console.hpp"
@@ -21,6 +22,17 @@ void handle(void*, dev_console::Command command, int64_t value,
   if (command == dev_console::Command::temporal_dither_status ||
       command == dev_console::Command::temporal_dither_set) {
     console.writeLine(temporalDitherModeName(temporalDitherMode()));
+  }
+  if (command == dev_console::Command::temporal_dither_rate_set) {
+    const bool accepted = temporalDitherRefreshSchedule().setRateHz(
+        static_cast<uint16_t>(value), 0U);
+    console.writeLine(accepted ? "rate set" : "rate rejected");
+  }
+  if (command == dev_console::Command::temporal_dither_rate_status) {
+    const auto stats = temporalDitherRefreshSchedule().takeStatistics();
+    char line[48];
+    std::snprintf(line, sizeof(line), "rate %u", stats.rate_hz);
+    console.writeLine(line);
   }
 }
 
@@ -201,12 +213,78 @@ void testRefreshSchedule() {
   schedule.reset(100U);
   assert(!schedule.due(100U + temporal_dither_period_us - 1U));
   assert(schedule.due(100U + temporal_dither_period_us));
+  schedule.recordFrameStart(100U + temporal_dither_period_us);
   assert(!schedule.due(100U + temporal_dither_period_us));
   assert(schedule.due(100U + 8U * temporal_dither_period_us));
+  schedule.recordFrameStart(100U + 8U * temporal_dither_period_us);
   assert(!schedule.due(100U + 8U * temporal_dither_period_us));
   assert(temporal_dither_target_hz == 100U);
+  const auto stats = schedule.takeStatistics();
+  assert(stats.rate_hz == 100U && stats.interval_us == 10000U);
+  assert(stats.frames_started == 2U);
+  assert(stats.interval_samples == 1U);
+  assert(stats.interval_min_us == 7U * temporal_dither_period_us);
+  assert(stats.interval_average_us == 7U * temporal_dither_period_us);
+  assert(stats.interval_max_us == 7U * temporal_dither_period_us);
+  assert(stats.missed_intervals == 6U);
   schedule.stop();
   assert(!schedule.due(1000000U));
+}
+
+void testRateBoundsBusyAndStatistics() {
+  TemporalDitherRefreshSchedule schedule;
+  assert(schedule.rateHz() == 100U);
+  assert(TemporalDitherRefreshSchedule::validRateHz(50U));
+  assert(TemporalDitherRefreshSchedule::validRateHz(100U));
+  assert(TemporalDitherRefreshSchedule::validRateHz(110U));
+  assert(!TemporalDitherRefreshSchedule::validRateHz(49U));
+  assert(!TemporalDitherRefreshSchedule::validRateHz(111U));
+  assert(!TemporalDitherRefreshSchedule::validRateHz(120U));
+  assert(!schedule.setRateHz(120U, 0U));
+  assert(schedule.setRateHz(110U, 1000U));
+  assert(schedule.periodUs() == 9090U);
+  schedule.reset(1000U);
+
+  // A due time during an active transfer becomes one pending refresh; it
+  // records the conflict and launches once transport is available.
+  schedule.observeOutputBusy(1000U + schedule.periodUs(), true);
+  assert(schedule.due(1000U + schedule.periodUs() + 15U));
+  schedule.recordFrameStart(1000U + schedule.periodUs() + 15U);
+  auto stats = schedule.takeStatistics();
+  assert(stats.dma_busy_conflicts == 1U);
+  assert(stats.output_busy_conflicts == 1U);
+  assert(stats.missed_intervals == 0U);
+  assert(stats.latency_samples == 1U && stats.latency_max_us == 15U);
+
+  // Variable real start intervals are measured independently of requested
+  // cadence; no busy transfer can be restarted by this scheduler.
+  schedule.reset(50000U);
+  schedule.recordFrameStart(50000U);
+  schedule.recordFrameStart(59000U);
+  schedule.recordFrameStart(68100U);
+  schedule.recordFrameStart(77000U);
+  stats = schedule.takeStatistics();
+  assert(stats.interval_samples == 3U);
+  assert(stats.interval_min_us == 8900U);
+  assert(stats.interval_average_us == 9000U);
+  assert(stats.interval_max_us == 9100U);
+  assert(stats.dma_busy_conflicts == 0U);
+  assert(stats.output_busy_conflicts == 0U);
+
+  // A delayed service call collapses old slots into one current frame.
+  schedule.reset(100000U);
+  assert(schedule.due(100000U + 4U * schedule.periodUs() + 10U));
+  schedule.recordFrameStart(100000U + 4U * schedule.periodUs() + 20U);
+  stats = schedule.takeStatistics();
+  assert(stats.missed_intervals == 3U);
+  assert(stats.frames_started == 1U);
+  assert(stats.latency_max_us == 20U);
+
+  // Rate changes reset sampling baselines without changing dither math/state.
+  assert(schedule.setRateHz(100U, 200000U));
+  assert(schedule.rateHz() == 100U && schedule.periodUs() == 10000U);
+  stats = schedule.takeStatistics();
+  assert(stats.interval_samples == 0U && stats.missed_intervals == 0U);
 }
 
 void testConsoleToggleAndStatus() {
@@ -214,18 +292,49 @@ void testConsoleToggleAndStatus() {
   TemporalDitherRefreshTracker tracker;
   assert(!tracker.consumeChange());
   dev_console::Console console;
-  char output[256];
+  char output[512];
   feed(console, "\n");
   drain(console, output, sizeof(output));
-  feed(console, "dither\ndither basic\ndither\ndither perceptual\ndither\ndither off\ndither nope\n");
+  feed(console, "dither\ndither basic\ndither\ndither perceptual\ndither\ndither off\n");
   drain(console, output, sizeof(output));
   assert(std::strstr(output, "off") != nullptr);
   assert(std::strstr(output, "basic") != nullptr);
   assert(std::strstr(output, "perceptual") != nullptr);
-  assert(std::strstr(output, "Usage: dither {off|basic|perceptual}") != nullptr);
+  feed(console, "dither rate 110\ndither rate\ndither rate 120\ndither rate 100 extra\ndither nope\n");
+  drain(console, output, sizeof(output));
+  assert(std::strstr(output, "rate set") != nullptr);
+  assert(std::strstr(output, "rate 110") != nullptr);
+  assert(std::strstr(output, "rate rejected") != nullptr);
+  assert(std::strstr(output, "Usage: dither") != nullptr);
   assert(!temporalDitherEnabled());
   assert(tracker.consumeChange());
   assert(!tracker.consumeChange());
+}
+
+void testEffectDitherPolicy() {
+  static_assert(effect_temporal_dither_rate_hz == 110U,
+                "active production color effects target the selected 110 Hz");
+  TemporalDitherRefreshSchedule schedule;
+  assert(schedule.rateHz() == temporal_dither_default_rate_hz);
+  assert(!schedule.hasUserRateSelection());
+  assert(schedule.setRateHzForEffect(effect_temporal_dither_rate_hz, 100U));
+  assert(schedule.rateHz() == 110U && schedule.periodUs() == 9090U);
+  assert(!schedule.hasUserRateSelection());
+  assert(schedule.setRateHzForEffect(temporal_dither_default_rate_hz, 200U));
+  assert(schedule.rateHz() == 100U && schedule.periodUs() == 10000U);
+  assert(!schedule.hasUserRateSelection());
+  assert(schedule.setRateHz(105U, 300U));
+  assert(schedule.hasUserRateSelection());
+  static_assert(resolveProductionEffectDitherMode(false) ==
+                    TemporalDitherMode::off,
+                "ordinary production rendering must remain steady");
+  static_assert(resolveProductionEffectDitherMode(true) ==
+                    TemporalDitherMode::perceptual,
+                "production effects may request perceptual mode only");
+  assert(resolveTemporalDitherMode(true, TemporalDitherMode::basic) ==
+         TemporalDitherMode::perceptual);
+  assert(resolveTemporalDitherMode(false, TemporalDitherMode::basic) ==
+         TemporalDitherMode::basic);
 }
 }  // namespace
 
@@ -237,5 +346,7 @@ int main() {
   testEffectRequestTemporarilyOverridesUserMode();
   testStaticFrameRefreshAndImmutableDmaBuffer();
   testRefreshSchedule();
+  testRateBoundsBusyAndStatistics();
   testConsoleToggleAndStatus();
+  testEffectDitherPolicy();
 }

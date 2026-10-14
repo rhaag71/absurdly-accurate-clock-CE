@@ -16,7 +16,7 @@ using presentation_time_event::Event;
 using ws2812_display::Pixels;
 
 constexpr Rgb kBlack{0, 0, 0};
-constexpr Rgb kNormal{255, 240, 220};
+constexpr Rgb kNormal{255, 255, 220};
 constexpr Rgb kOtherNormal{40, 100, 200};
 
 int centeredX(const char* text) {

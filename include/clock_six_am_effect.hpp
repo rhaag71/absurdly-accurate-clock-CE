@@ -147,11 +147,10 @@ class State {
   }
 
   bool primaryActive() const { return phase_ != Phase::idle; }
-  // Keep the experimental output treatment on the warm sun only. The same
-  // sunrise phase continues through the blue wash, so elapsed time is the
-  // precise handoff boundary rather than primary-effect completion.
-  bool warmSunDitherRequested() const {
-    return phase_ == Phase::sunrise && elapsed_us_ < kBlueWashStartUs;
+  // Dither only while the special event is producing animated color frames.
+  // The settled blue display and its minute-stepped tint tail use steady output.
+  bool activeColorDitherRequested() const {
+    return phase_ == Phase::sunrise;
   }
   bool tintActive() const { return tint_active_; }
   uint8_t tintMinute() const { return tint_active_ ? tint_minute_ : 0U; }

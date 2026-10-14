@@ -19,14 +19,13 @@ int main() {
     assert(candidate_soft_white_brightness == 2);
 
     const ws2812_display::ClockColor default_color = ws2812_display::default_clock_color;
-    assert(default_color.red == soft_white.red);
-    assert(default_color.green == soft_white.green);
-    assert(default_color.blue == soft_white.blue);
-    assert(ws2812_display::clockColor().red == soft_white.red);
-    assert(ws2812_display::clockColor().green == soft_white.green);
-    assert(ws2812_display::clockColor().blue == soft_white.blue);
-    assert(ws2812_display::default_brightness == soft_white_brightness);
-    assert(ws2812_display::brightness() == soft_white_brightness);
+    assert(default_color.red == 255 && default_color.green == 255 &&
+           default_color.blue == 220);
+    assert(ws2812_display::clockColor().red == 255);
+    assert(ws2812_display::clockColor().green == 255);
+    assert(ws2812_display::clockColor().blue == 220);
+    assert(ws2812_display::default_brightness == normal_clock_brightness);
+    assert(ws2812_display::brightness() == normal_clock_brightness);
 
     const Rgb expected_palette[] = {
         {255, 240, 220}, {255, 255, 255}, {255, 96, 0}, {255, 0, 0},

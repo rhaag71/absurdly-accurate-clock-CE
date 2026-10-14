@@ -31,11 +31,15 @@ private:
     BrightnessRefreshTracker brightness_refresh_;
     ClockColorRefreshTracker color_refresh_;
     display_appearance::TransferRefreshTracker transfer_refresh_;
-#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    // Dither state exists only in the selected WS2812 driver, including
+    // production builds. The production scheduler carries no telemetry.
     TemporalDither temporal_dither_;
-    TemporalDitherRefreshSchedule temporal_dither_schedule_;
     TemporalDitherMode active_dither_mode_ = TemporalDitherMode::off;
     bool effect_dither_requested_ = false;
+#if !defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    TemporalDitherRefreshSchedule effect_dither_schedule_;
+#endif
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
     ProofModeRefreshTracker proof_mode_refresh_;
     TestPatternRefreshTracker test_pattern_refresh_;
     bool last_frame_was_pattern_ = false;

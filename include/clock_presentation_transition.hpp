@@ -174,10 +174,10 @@ class State {
   bool recenterActive() const { return recenter_.active(); }
   bool sixPmActive() const { return six_pm_.primaryActive(); }
   bool sixAmActive() const { return six_am_.primaryActive(); }
-  // This presentation request is limited to the warm sun phase. It never
-  // mutates the console's independent output-mode selection.
+  // Effect requests are presentation-owned and never mutate development
+  // console selection. SixAM covers its animated sunrise/wash/dissolve only.
   bool sixAmDitherRequested() const {
-    return six_am_.warmSunDitherRequested();
+    return six_am_.activeColorDitherRequested();
   }
   bool sixPmDitherRequested() const {
     return six_pm_.colorDitherRequested();

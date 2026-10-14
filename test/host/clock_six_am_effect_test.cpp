@@ -13,7 +13,7 @@ using presentation_time_event::Event;
 using ws2812_display::Pixels;
 
 constexpr Rgb kBlack{0U, 0U, 0U};
-constexpr Rgb kNormal{255U, 240U, 220U};
+constexpr Rgb kNormal{255U, 255U, 220U};
 
 int centeredX(const char* text) {
   return (ws2812_display::logical_width - compact_clock_font::textWidth(text)) /
@@ -277,7 +277,17 @@ void testEventEntryAndBlueTint() {
   transition.update(true, 6, 0, "6:00", centeredX("6:00"),
       sunrise_start + clock_six_am_effect::kBlueWashStartUs);
   assert(transition.sixAmActive());  // Blue wash is still part of primary.
-  assert(!transition.sixAmDitherRequested());
+  assert(transition.sixAmDitherRequested());
+  transition.update(true, 6, 0, "6:00", centeredX("6:00"),
+      sunrise_start + clock_six_am_effect::kBlueWashStartUs +
+          clock_six_am_effect::kBlueWashDurationUs);
+  assert(transition.sixAmDitherRequested());  // Sun dissolve is animated too.
+  transition.update(true, 6, 0, "6:00", centeredX("6:00"),
+      sunrise_start + clock_six_am_effect::kBlueWashStartUs +
+          clock_six_am_effect::kBlueWashDurationUs +
+          clock_six_am_effect::kSunDissolveDurationUs);
+  assert(!transition.sixAmActive() && transition.morningTintActive());
+  assert(!transition.sixAmDitherRequested());  // Settled blue tail is steady.
 
   State startup;
   startup.update(true, 6, 0, "6:00", centeredX("6:00"), 0U);
