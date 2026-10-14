@@ -127,6 +127,10 @@ c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
     -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
     test/host/ws2812_transfer_test.cpp -o "$test_dir/ws2812_transfer"
 "$test_dir/ws2812_transfer"
+c++ -std=c++11 -Wall -Wextra -Werror -DAAC_BUILD_PROFILE_DEVELOPMENT \
+    -DAAC_DISPLAY_WS2812 -I include src/dev_console.cpp src/clock_state.cpp \
+    test/host/ws2812_temporal_dither_test.cpp -o "$test_dir/ws2812_temporal_dither"
+"$test_dir/ws2812_temporal_dither"
 c++ -std=c++11 -Wall -Wextra -Werror -DAAC_DISPLAY_WS2812 -I include \
     src/dev_console.cpp src/clock_state.cpp test/host/ws2812_brightness_console_test.cpp \
     -o "$test_dir/ws2812_brightness_console"

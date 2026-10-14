@@ -75,6 +75,10 @@ void Driver::begin(const presentation::State&) {
     color_refresh_.reset();
     transfer_refresh_.reset();
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    temporal_dither_.reset();
+    temporal_dither_schedule_.stop();
+    active_dither_mode_ = TemporalDitherMode::off;
+    effect_dither_requested_ = false;
     proof_mode_refresh_.reset();
     test_pattern_refresh_.reset();
     last_frame_was_pattern_ = false;
@@ -206,6 +210,33 @@ void Driver::service(const presentation::State& state) {
 
     updateFrame(state, force_refresh, overlay);
     informational_overlay::isolateLevelProof(pixels_, overlay);
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    const bool effect_dither_requested =
+        clock_transition_.effectDitherRequested();
+    const bool effect_request_changed =
+        effect_dither_requested != effect_dither_requested_;
+    effect_dither_requested_ = effect_dither_requested;
+    const TemporalDitherMode requested_dither_mode =
+        resolveTemporalDitherMode(effect_dither_requested,
+                                  temporalDitherMode());
+    const bool dither_mode_changed = requested_dither_mode != active_dither_mode_;
+    if (dither_mode_changed || effect_request_changed) {
+        // Reset on both edges so a temporary effect cannot inherit or leave
+        // residual carry in the user's ordinary output mode.
+        temporal_dither_.reset();
+        active_dither_mode_ = requested_dither_mode;
+        if (active_dither_mode_ == TemporalDitherMode::off)
+            temporal_dither_schedule_.stop();
+        else
+            temporal_dither_schedule_.reset(state.now_us);
+        frame_dirty_ = true;
+    }
+    if (brightness_changed || color_changed) temporal_dither_.reset();
+    const bool dither_enabled = active_dither_mode_ != TemporalDitherMode::off;
+    const bool dither_refresh_due = dither_enabled &&
+        temporal_dither_schedule_.due(state.now_us);
+    if (dither_refresh_due) frame_dirty_ = true;
+#endif
 
     if (frame_dirty_) {
         uint8_t output_brightness = brightness();
@@ -221,7 +252,17 @@ void Driver::service(const presentation::State& state) {
         // already in device-code units, so it is not crushed by brightness 2
         // or brightened by development comparison curves. Other pixels retain
         // their existing brightness/transfer path exactly.
-        if (!wire_frame_.prepare(pixels_, output_brightness, transfer)) return;
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        const bool prepared = dither_enabled
+            ? wire_frame_.prepareDithered(pixels_, output_brightness, transfer,
+                                          temporal_dither_,
+                                          active_dither_mode_)
+            : wire_frame_.prepare(pixels_, output_brightness, transfer);
+#else
+        const bool prepared =
+            wire_frame_.prepare(pixels_, output_brightness, transfer);
+#endif
+        if (!prepared) return;
         if (overlay.level_proof >= 0 || (clock_frame && overlay.holdover))
             wire_frame_.paintOutputPixel(31, 3,
                 informational_overlay::outputRed(overlay));

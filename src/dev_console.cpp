@@ -9,6 +9,9 @@
 #include "ws2812_brightness.hpp"
 #include "ws2812_clock_color.hpp"
 #include "ws2812_test_pattern.hpp"
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+#include "ws2812_temporal_dither.hpp"
+#endif
 #endif
 
 namespace dev_console {
@@ -270,6 +273,10 @@ void Console::execute(CommandHandler handler, void* context) {
             write("           color <r> <g> <b>\r\n");
             write("g          Show/set output transfer: off, g2, ws\r\n");
             write("           g {off|g2|ws}\r\n");
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+            write("dither     Show/set temporal output dithering (default off)\r\n");
+            writeLine("           dither {off|basic|perceptual}");
+#endif
             write("pat        Show/select full-panel test color; pat off restores clock\r\n");
             write("           pat {amber|r|g|b|w|c|m|off}\r\n");
             write("p          Show/select static clock proof: norm, amber, invert, bg\r\n");
@@ -336,6 +343,25 @@ void Console::execute(CommandHandler handler, void* context) {
                 else
                     writeLine("Usage: g {off|g2|ws}");
             }
+#if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+        } else if (std::strcmp(begin, "dither") == 0) {
+            if (!*args && !*second) {
+                if (handler) handler(context, Command::temporal_dither_status,
+                                     0, *this);
+            } else if (*args && !*second && handler) {
+                if (std::strcmp(args, "off") == 0)
+                    handler(context, Command::temporal_dither_set, 0, *this);
+                else if (std::strcmp(args, "basic") == 0 ||
+                         std::strcmp(args, "on") == 0)
+                    handler(context, Command::temporal_dither_set, 1, *this);
+                else if (std::strcmp(args, "perceptual") == 0)
+                    handler(context, Command::temporal_dither_set, 2, *this);
+                else
+                    writeLine("Usage: dither {off|basic|perceptual}");
+            } else {
+                writeLine("Usage: dither {off|basic|perceptual}");
+            }
+#endif
         } else if (std::strcmp(begin, "pat") == 0) {
             if (!*args && !*second) {
                 if (handler) handler(context, Command::pattern_status, 0, *this);

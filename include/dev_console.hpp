@@ -12,7 +12,8 @@ enum class Command : uint8_t {
     fault_status, gps_off, gps_on, pps_off, pps_on,
     rmc_bad_checksum, rmc_early, rmc_late, rmc_normal, fault_clear,
     brightness_status, brightness_set, color_status, color_set,
-    transfer_status, transfer_set, pattern_status, pattern_set, ramp_set,
+    transfer_status, transfer_set, temporal_dither_status, temporal_dither_set,
+    pattern_status, pattern_set, ramp_set,
     presentation_status, presentation_set,
     status_proof_set, holdover_proof_set, day_proof_set, level_proof_set,
 };

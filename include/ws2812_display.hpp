@@ -5,6 +5,7 @@
 #include "presentation_state.hpp"
 #include "ws2812_pixels.hpp"
 #include "ws2812_wire_frame.hpp"
+#include "ws2812_temporal_dither.hpp"
 #include "ws2812_clock_color.hpp"
 #include "display_transfer.hpp"
 #include "informational_overlay.hpp"
@@ -31,6 +32,10 @@ private:
     ClockColorRefreshTracker color_refresh_;
     display_appearance::TransferRefreshTracker transfer_refresh_;
 #if defined(AAC_BUILD_PROFILE_DEVELOPMENT)
+    TemporalDither temporal_dither_;
+    TemporalDitherRefreshSchedule temporal_dither_schedule_;
+    TemporalDitherMode active_dither_mode_ = TemporalDitherMode::off;
+    bool effect_dither_requested_ = false;
     ProofModeRefreshTracker proof_mode_refresh_;
     TestPatternRefreshTracker test_pattern_refresh_;
     bool last_frame_was_pattern_ = false;

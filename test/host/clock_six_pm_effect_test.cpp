@@ -72,6 +72,7 @@ void testSixPmEntryAndClassification() {
   result = transition.update(true, 18, 0, "6:00", centeredX("6:00"), 2U);
   assert(result.event == Event::six_pm);
   assert(transition.sixPmActive());
+  assert(!transition.sixPmDitherRequested());  // Clear/rain remain steady white.
   assert(!transition.dissolveActive() && !transition.recenterActive());
   assert(centeredX("5:59") == centeredX("6:00"));
   assert(transition.currentX() == centeredX("6:00"));
@@ -79,12 +80,14 @@ void testSixPmEntryAndClassification() {
   State startup;
   result = startup.update(true, 18, 0, "6:00", centeredX("6:00"), 0U);
   assert(result.event == Event::none && !startup.sixPmActive());
+  assert(!startup.sixPmDitherRequested());
   assert(!startup.dissolveActive() && !startup.recenterActive());
 
   State arbitrary_jump;
   arbitrary_jump.update(true, 17, 17, "5:17", centeredX("5:17"), 0U);
   result = arbitrary_jump.update(true, 18, 0, "6:00", centeredX("6:00"), 1U);
   assert(result.event == Event::none && !arbitrary_jump.sixPmActive());
+  assert(!arbitrary_jump.sixPmDitherRequested());
   assert(!arbitrary_jump.dissolveActive());
 
   State first_valid;
@@ -447,31 +450,39 @@ void testSettleAndScanner() {
 }
 
 void completePrimary(State& transition, uint32_t& now) {
+  assert(!transition.sixPmDitherRequested());
   while (transition.sixPmEffect().phase() == Phase::clear_beat) {
     now += clock_six_pm_effect::kClearBeatUs;
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(!transition.sixPmDitherRequested());
   }
   if (transition.sixPmEffect().phase() == Phase::rain) {
     now += transition.sixPmEffect().rainDurationUs();
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(!transition.sixPmDitherRequested());
   }
   while (transition.sixPmEffect().phase() == Phase::settle) {
     now += clock_six_pm_effect::kSettleUs;
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(transition.sixPmDitherRequested());
   }
   while (transition.sixPmEffect().phase() == Phase::outbound) {
     now += clock_six_pm_effect::kOutboundColumnIntervalUs;
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(transition.sixPmDitherRequested());
   }
   if (transition.sixPmEffect().phase() == Phase::right_hold) {
     now += clock_six_pm_effect::kRightHoldUs;
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(transition.sixPmDitherRequested());
   }
   while (transition.sixPmEffect().phase() == Phase::returning) {
     now += clock_six_pm_effect::kReturnColumnIntervalUs;
     transition.update(true, 18, 0, "6:00", centeredX("6:00"), now);
+    assert(transition.sixPmDitherRequested());
   }
   assert(!transition.sixPmActive() && transition.eveningTintActive());
+  assert(transition.sixPmDitherRequested());  // Full-amber 18:00 hold.
 }
 
 void testTintScheduleAndLiveClock() {
@@ -480,6 +491,7 @@ void testTintScheduleAndLiveClock() {
                                    0U);
   assert(result.event == Event::none);
   assert(!direct_1803.sixPmActive() && !direct_1803.eveningTintActive());
+  assert(!direct_1803.sixPmDitherRequested());
   assert(direct_1803.eveningAmberPercent() == 0U);
 
   State transition;
@@ -505,6 +517,7 @@ void testTintScheduleAndLiveClock() {
       assert(result.changed);
     }
     assert(transition.eveningAmberPercent() == expected_percent[minute]);
+    assert(transition.sixPmDitherRequested() == (minute == 0U));
     Pixels frame;
     transition.render(frame, kBlack, kOtherNormal);
     clock_dissolve::ClockMask expected_mask;
@@ -517,6 +530,7 @@ void testTintScheduleAndLiveClock() {
     assertMaskColor(frame, expected_mask, blended);
   }
   assert(!transition.eveningTintActive());
+  assert(!transition.sixPmDitherRequested());
 
   // Tint remains presentation paint over the current base color and does not
   // overwrite the configured clock color used by later renders.
@@ -574,6 +588,7 @@ void testInterruptionsInvalidAndOverlays() {
                                     centeredX(replacement), ++now);
     assert(result.changed && !transition.sixPmActive());
     assert(!transition.eveningTintActive());
+    assert(!transition.sixPmDitherRequested());
     assert(std::strcmp(transition.text(), replacement) == 0);
     assert(transition.currentX() == centeredX(replacement));
     Pixels frame;
@@ -589,6 +604,7 @@ void testInterruptionsInvalidAndOverlays() {
   invalid.update(true, 18, 0, "6:00", centeredX("6:00"), 1U);
   auto result = invalid.update(false, 0, 0, "", 0, 2U);
   assert(result.changed && !invalid.sixPmActive() && !invalid.eveningTintActive());
+  assert(!invalid.sixPmDitherRequested());
   Pixels blank;
   invalid.render(blank, kBlack, kNormal);
   assertMaskColor(blank, clock_dissolve::ClockMask{}, kBlack);

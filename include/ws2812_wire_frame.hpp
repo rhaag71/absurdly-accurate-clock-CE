@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ws2812_pixels.hpp"
+#include "ws2812_temporal_dither.hpp"
 
 namespace ws2812_display {
 constexpr uint32_t wire_bit_rate = 800000;
@@ -20,6 +21,19 @@ public:
         if (busy_) return false;
         for (std::size_t i = 0; i < pixel_count; ++i)
             words_[i] = pixels.grbWord(i, brightness, transfer);
+        prepared_ = true;
+        return true;
+    }
+
+    bool prepareDithered(const Pixels& pixels, uint8_t brightness,
+                         display_appearance::TransferMode transfer,
+                         TemporalDither& dither,
+                         TemporalDitherMode mode = TemporalDitherMode::basic) {
+        if (busy_) return false;
+        for (std::size_t i = 0; i < pixel_count; ++i) {
+            const Rgb scaled = dither.scale(pixels.at(i), brightness, i, mode);
+            words_[i] = pixels.grbWordForColor(scaled, 255U, transfer);
+        }
         prepared_ = true;
         return true;
     }

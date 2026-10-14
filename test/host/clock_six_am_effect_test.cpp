@@ -261,15 +261,28 @@ void testEventEntryAndBlueTint() {
   result = transition.update(true, 6, 0, "6:00", centeredX("6:00"), 2U);
   assert(result.event == Event::six_am);
   assert(transition.sixAmActive());
+  assert(!transition.sixAmDitherRequested());  // Dark beat is still dark.
   assert(!transition.sixPmActive() && !transition.dissolveActive());
   assert(!transition.recenterActive());
   assert(transition.currentX() == centeredX("6:00"));
   assert(transition.sixAmEffect().sunCenterX() ==
          centeredX("6:00") + (compact_clock_font::textWidth("6:00") - 1) / 2);
 
+  const uint32_t sunrise_start = 2U + clock_six_am_effect::kDarkBeatUs;
+  transition.update(true, 6, 0, "6:00", centeredX("6:00"), sunrise_start);
+  assert(transition.sixAmDitherRequested());
+  transition.update(true, 6, 0, "6:00", centeredX("6:00"),
+      sunrise_start + clock_six_am_effect::kBlueWashStartUs - 1U);
+  assert(transition.sixAmDitherRequested());
+  transition.update(true, 6, 0, "6:00", centeredX("6:00"),
+      sunrise_start + clock_six_am_effect::kBlueWashStartUs);
+  assert(transition.sixAmActive());  // Blue wash is still part of primary.
+  assert(!transition.sixAmDitherRequested());
+
   State startup;
   startup.update(true, 6, 0, "6:00", centeredX("6:00"), 0U);
   assert(!startup.sixAmActive() && !startup.morningTintActive());
+  assert(!startup.sixAmDitherRequested());
   Pixels frame;
   startup.render(frame, kBlack, kNormal);
   clock_dissolve::ClockMask expected;
@@ -279,6 +292,7 @@ void testEventEntryAndBlueTint() {
   State direct_0603;
   direct_0603.update(true, 6, 3, "6:03", centeredX("6:03"), 0U);
   assert(!direct_0603.sixAmActive() && !direct_0603.morningTintActive());
+  assert(!direct_0603.sixAmDitherRequested());
   direct_0603.render(frame, kBlack, kNormal);
   assert(clock_dissolve::buildMask(expected, "6:03", centeredX("6:03")));
   assertMaskColor(frame, expected, kNormal);
@@ -290,6 +304,7 @@ void testEventEntryAndBlueTint() {
   assert(result.event == Event::six_am && completed.sixAmActive());
   completeSixAm(completed, now);
   assert(completed.morningBluePercent() == 100U);
+  assert(!completed.sixAmDitherRequested());
   completed.render(frame, kBlack, kNormal);
   assert(clock_dissolve::buildMask(expected, "6:00", centeredX("6:00")));
   assertMaskColor(frame, expected, clock_six_am_effect::kMorningBlue);
@@ -303,10 +318,12 @@ void testEventEntryAndBlueTint() {
                               centeredX(texts[i]), now);
     assert(result.changed && !completed.sixAmActive());
     assert(completed.morningBluePercent() == percents[i]);
+    assert(!completed.sixAmDitherRequested());
   }
   ++now;
   completed.update(true, 6, 5, "6:05", centeredX("6:05"), now);
   assert(!completed.morningTintActive() && completed.morningBluePercent() == 0U);
+  assert(!completed.sixAmDitherRequested());
   completed.render(frame, kBlack, kNormal);
   assert(clock_dissolve::buildMask(expected, "6:05", centeredX("6:05")));
   assertMaskColor(frame, expected, kNormal);
@@ -316,6 +333,11 @@ void testEventEntryAndBlueTint() {
   aborted.update(true, 6, 0, "6:00", centeredX("6:00"), 1U);
   aborted.update(false, 6, 0, "", 0, 2U);
   assert(!aborted.sixAmActive() && !aborted.morningTintActive());
+  assert(!aborted.sixAmDitherRequested());
+
+  State ordinary;
+  ordinary.update(true, 6, 3, "6:03", centeredX("6:03"), 0U);
+  assert(!ordinary.sixAmDitherRequested());
 }
 
 }  // namespace

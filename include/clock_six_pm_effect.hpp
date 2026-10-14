@@ -272,6 +272,15 @@ class State {
   }
 
   bool primaryActive() const { return phase_ != Phase::idle; }
+  // White clear/rain/settle pixels do not benefit from this treatment. Request
+  // perceptual output only while the amber scanner is active and through the
+  // 18:00 amber hold; release it on the first blend step toward white (18:01).
+  bool colorDitherRequested() const {
+    const bool amber_scanner = phase_ == Phase::outbound ||
+                               phase_ == Phase::right_hold ||
+                               phase_ == Phase::returning;
+    return amber_scanner || (tint_active_ && tint_minute_ == 0U);
+  }
   bool tintActive() const { return tint_active_; }
   uint8_t tintMinute() const { return tint_active_ ? tint_minute_ : 0U; }
   uint8_t amberPercent() const {

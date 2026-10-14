@@ -174,6 +174,17 @@ class State {
   bool recenterActive() const { return recenter_.active(); }
   bool sixPmActive() const { return six_pm_.primaryActive(); }
   bool sixAmActive() const { return six_am_.primaryActive(); }
+  // This presentation request is limited to the warm sun phase. It never
+  // mutates the console's independent output-mode selection.
+  bool sixAmDitherRequested() const {
+    return six_am_.warmSunDitherRequested();
+  }
+  bool sixPmDitherRequested() const {
+    return six_pm_.colorDitherRequested();
+  }
+  bool effectDitherRequested() const {
+    return sixAmDitherRequested() || sixPmDitherRequested();
+  }
   bool eveningTintActive() const { return six_pm_.tintActive(); }
   bool morningTintActive() const { return six_am_.tintActive(); }
   uint8_t eveningAmberPercent() const { return six_pm_.amberPercent(); }

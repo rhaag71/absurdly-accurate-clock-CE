@@ -218,6 +218,17 @@ void consoleCommand(void*, dev_console::Command command, int64_t utc_seconds,
             display_appearance::setTransferMode(
                 static_cast<display_appearance::TransferMode>(utc_seconds));
         writeTransferStatus(console);
+    } else if (command == dev_console::Command::temporal_dither_status ||
+               command == dev_console::Command::temporal_dither_set) {
+        if (command == dev_console::Command::temporal_dither_set)
+            ws2812_display::setTemporalDitherMode(
+                static_cast<ws2812_display::TemporalDitherMode>(utc_seconds));
+        char line[72];
+        snprintf(line, sizeof(line), "WS2812 temporal dithering: %s (target %u Hz)",
+                 ws2812_display::temporalDitherModeName(
+                     ws2812_display::temporalDitherMode()),
+                 static_cast<unsigned>(ws2812_display::temporal_dither_target_hz));
+        console.writeLine(line);
     } else if (command == dev_console::Command::pattern_status ||
                command == dev_console::Command::pattern_set ||
                command == dev_console::Command::ramp_set) {
