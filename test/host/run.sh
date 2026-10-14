@@ -107,6 +107,9 @@ c++ -std=c++11 -Wall -Wextra -Werror -I include \
     -o "$test_dir/clock_presentation_transition"
 "$test_dir/clock_presentation_transition"
 c++ -std=c++11 -Wall -Wextra -Werror -I include \
+    test/host/clock_noon_effect_test.cpp -o "$test_dir/clock_noon_effect"
+"$test_dir/clock_noon_effect"
+c++ -std=c++11 -Wall -Wextra -Werror -I include \
     test/host/clock_six_pm_effect_test.cpp \
     -o "$test_dir/clock_six_pm_effect"
 "$test_dir/clock_six_pm_effect"

@@ -642,10 +642,13 @@ presentation effects may build on the same separation.
 ### Time-event effect hierarchy
 
 **Approved presentation behavior.** The minimal civil-time event resolver,
-ordinary-hour dissolve, SixPM effect, and first-pass SixAM sunrise effect are
-implemented. SixPM is physically tuned; its amber fade-back still needs later
-correction. The SixAM implementation is an unverified first physical attempt.
-Noon and midnight choreography remain planned. Presentation conceptually
+ordinary-hour dissolve, SixPM effect, first-pass SixAM sunrise, and first-pass
+Noon effect are implemented. SixPM is physically tuned; its amber fade-back
+still needs later correction. The corrected SixAM colors and choreography
+await hardware retest. The first Noon implementation was physically tested;
+its mostly left/right split prompted the radial-trajectory and hot-color
+correction, which now awaits hardware retest. Midnight remains planned.
+Presentation conceptually
 separates five decisions:
 
 1. classify the civil-time event;
@@ -752,11 +755,30 @@ changed, then settle.
   amber-to-white color paths both need future physical color/gamma or
   per-channel correction; SixPM has shown pink/purple and green-ish intermediate
   colors with lingering purple near the end.
-- **12:00 PM / noon:** outgoing `11:59` pixels explode outward, then
-  return/reassemble as `12:00` at `12:00`'s final centered position, absorbing
-  the observed centering change inside the primary choreography. Settle there;
-  do not append the ordinary recenter slide. Noon after-effect and color-sweep
-  details are TBD; do not infer a palette or behavior.
+- **12:00 PM / noon:** at a genuine `11:59`→`12:00` event, each occupied old
+  glyph pixel is represented by a bounded deterministic particle. A
+  source-mask-centered radial/semi-radial vector with restrained deterministic
+  variation sends particles toward all four panel edges; center-region
+  particles receive axial or diagonal directions. Particles pass through a
+  120 ms dark midpoint, then travel inward to the actual final centered
+  `12:00` mask. Source and destination coordinates are paired deterministically
+  if the masks have different occupancy counts; every source and destination
+  pixel participates. Each particle receives a deterministic, hash-assigned
+  saturated color from red `RGB(255,0,0)`, orange `RGB(255,96,0)`, purple
+  `RGB(255,0,255)`, and amber `RGB(255,160,0)`. After its launch, a particle
+  transitions from normal warm white to its assigned color over 35 ms, then
+  holds that vivid color through outbound travel. Reassembly stays saturated
+  until the final 100 ms before landing, when it transitions quickly back to
+  normal warm white. This avoids washing out most of the motion with white
+  blending. The phases remain 750 ms explosion, 120 ms midpoint, 750 ms
+  reassembly, and a 300 ms final settle (1.92 s nominal total). Noon requests
+  production perceptual dithering at 110 Hz only during explosion and
+  reassembly; midpoint and settled output use the ordinary non-dithered path.
+  The primary effect owns the `11:59`→`12:00` centering shift and suppresses
+  ordinary dissolve and recenter. The first physical test read mostly as a
+  left/right split; the revised radial motion and hot color story require
+  hardware retest. Noon after-effect details remain TBD; midnight remains
+  unimplemented.
 - **6:00 PM:** the effect is implemented and physically tuned; its amber
   fade-back still needs a separate correction. At a
   genuine `17:59`→`18:00` event, old glyphs clear, followed by a 60 ms dark
@@ -893,8 +915,9 @@ The time-event hierarchy, selected primary-transition directions, after-effect
 ordering, and theme interaction are specified above. The resolver, special
 precedence, and ordinary hourly dissolve are implemented and physically
 verified. SixPM is physically tuned, with its amber fade-back correction still
-pending; the first-pass SixAM sunrise is implemented but awaits physical
-verification. Noon and midnight remain unimplemented. Persistent status
+pending; the first-pass SixAM sunrise awaits physical verification. Noon has a
+first deterministic particle implementation but awaits physical evaluation;
+midnight remains unimplemented. Persistent status
 hierarchy and clear time-quality indication remain mandatory.
 
 Transfer characterization is now available in the WS2812 development build.

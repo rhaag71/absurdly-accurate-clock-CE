@@ -268,8 +268,88 @@ void testSpecialsInterruptionAndInvalid() {
   state.update(true, 11, 59, "11:59", centeredX("11:59"), 0U);
   result = state.update(true, 12, 0, "12:00", centeredX("12:00"), 1U);
   assert(result.event == Event::noon);
-  assert(!state.dissolveActive() && !state.recenterActive());
+  assert(state.noonActive() && !state.dissolveActive() &&
+         !state.recenterActive());
+  assert(state.noonEffect().phase() == clock_noon_effect::Phase::explosion);
+  assert(std::strcmp(state.text(), "12:00") == 0);
   assert(state.currentX() == centeredX("12:00"));
+  assert(state.effectDitherRequested() && state.noonDitherRequested());
+
+  Pixels noon_frame;
+  state.render(noon_frame, black, white);
+  clock_dissolve::ClockMask old_noon_mask;
+  assert(clock_dissolve::buildMask(old_noon_mask, "11:59", centeredX("11:59")));
+  for (uint8_t y = 0U; y < ws2812_display::logical_height; ++y) {
+    for (uint8_t x = 0U; x < ws2812_display::logical_width; ++x) {
+      assert(same(logicalPixel(noon_frame, x, y),
+                  old_noon_mask.contains(x, y) ? white : black));
+    }
+  }
+
+  uint32_t noon_time = 1U;
+  noon_time += clock_noon_effect::kExplosionUs;
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), noon_time);
+  assert(state.noonEffect().phase() == clock_noon_effect::Phase::midpoint);
+  assert(!state.effectDitherRequested());
+  noon_time += clock_noon_effect::kMidpointUs;
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), noon_time);
+  assert(state.noonEffect().phase() == clock_noon_effect::Phase::reassembly);
+  assert(state.effectDitherRequested());
+  noon_time += clock_noon_effect::kReassemblyUs;
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), noon_time);
+  assert(state.noonEffect().phase() == clock_noon_effect::Phase::settle);
+  assert(!state.effectDitherRequested());
+  noon_time += clock_noon_effect::kSettleUs;
+  result = state.update(true, 12, 0, "12:00", centeredX("12:00"), noon_time);
+  assert(result.changed && !state.noonActive());
+  assert(!state.dissolveActive() && !state.recenterActive());
+  assert(!state.effectDitherRequested());
+  state.render(noon_frame, black, white);
+  clock_dissolve::ClockMask final_noon_mask;
+  assert(clock_dissolve::buildMask(final_noon_mask, "12:00", centeredX("12:00")));
+  for (uint8_t y = 0U; y < ws2812_display::logical_height; ++y) {
+    for (uint8_t x = 0U; x < ws2812_display::logical_width; ++x) {
+      assert(same(logicalPixel(noon_frame, x, y),
+                  final_noon_mask.contains(x, y) ? white : black));
+    }
+  }
+  result = state.update(true, 12, 1, "12:01", centeredX("12:01"), noon_time + 1U);
+  assert(result.changed && !state.noonActive() && !state.effectDitherRequested());
+  state.render(noon_frame, black, white);
+  assert(state.targetX() == centeredX("12:01"));
+  clock_dissolve::ClockMask next_minute_mask;
+  assert(clock_dissolve::buildMask(next_minute_mask, "12:01", state.currentX()));
+  for (uint8_t y = 0U; y < ws2812_display::logical_height; ++y) {
+    for (uint8_t x = 0U; x < ws2812_display::logical_width; ++x) {
+      assert(same(logicalPixel(noon_frame, x, y),
+                  next_minute_mask.contains(x, y) ? white : black));
+    }
+  }
+
+  // Startup, direct entry, and arbitrary jumps into noon remain ordinary.
+  State no_false_noon;
+  result = no_false_noon.update(true, 12, 0, "12:00", centeredX("12:00"), 0U);
+  assert(result.event == Event::none && !no_false_noon.noonActive());
+  no_false_noon.reset();
+  result = no_false_noon.update(true, 12, 3, "12:03", centeredX("12:03"), 0U);
+  assert(result.event == Event::none && !no_false_noon.noonActive());
+  no_false_noon.reset();
+  no_false_noon.update(true, 11, 58, "11:58", centeredX("11:58"), 0U);
+  result = no_false_noon.update(true, 12, 0, "12:00", centeredX("12:00"), 1U);
+  assert(result.event == Event::none && !no_false_noon.noonActive());
+
+  // Latest presentation wins on interruption; invalid time clears particles.
+  state.reset();
+  state.update(true, 11, 59, "11:59", centeredX("11:59"), 0U);
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), 1U);
+  result = state.update(true, 12, 1, "12:01", centeredX("12:01"), 2U);
+  assert(result.changed && !state.noonActive() && !state.effectDitherRequested());
+  assert(std::strcmp(state.text(), "12:01") == 0);
+  state.reset();
+  state.update(true, 11, 59, "11:59", centeredX("11:59"), 0U);
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), 1U);
+  result = state.update(false, 0, 0, "", 0, 2U);
+  assert(result.changed && !state.noonActive() && !state.hasText());
 
   state.reset();
   state.update(true, 9, 59, "9:59", centeredX("9:59"), 0U);
@@ -307,6 +387,15 @@ void testOverlayIndependence() {
   overlay.health_state = informational_overlay::Health::green;
   overlay.holdover = true;
   overlay.holdover_intensity = 8;
+  assert(informational_overlay::apply(frame, overlay));
+  assert(same(logicalPixel(frame, 14, 7), display_appearance::calendar_blue));
+  assert(same(logicalPixel(frame, 31, 4), display_appearance::health_green));
+  assert(same(logicalPixel(frame, 31, 3), display_appearance::holdover_red));
+
+  state.reset();
+  state.update(true, 11, 59, "11:59", centeredX("11:59"), 0U);
+  state.update(true, 12, 0, "12:00", centeredX("12:00"), 1U);
+  state.render(frame, black, white);
   assert(informational_overlay::apply(frame, overlay));
   assert(same(logicalPixel(frame, 14, 7), display_appearance::calendar_blue));
   assert(same(logicalPixel(frame, 31, 4), display_appearance::health_green));
